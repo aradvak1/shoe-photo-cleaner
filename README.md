@@ -2,6 +2,8 @@
 
 A Next.js app for cleaning up shoe product photos (background removal, or full AI-generated "atmosphere" scenes), tagging them with product details (model number, SKU, sizes, color), and generating branded PDF catalogs — all in Hebrew/RTL.
 
+![Screenshot of the PHOTOS EDITOR landing page](.github/screenshot.jpg)
+
 - Background removal & scene generation via [Photoroom](https://www.photoroom.com/api)
 - Storage & database via [Supabase](https://supabase.com)
 - PDF catalogs via `@react-pdf/renderer`, rendered in an isolated worker process
