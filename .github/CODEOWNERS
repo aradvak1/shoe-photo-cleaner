@@ -1,0 +1,5 @@
+# These owners will be requested for review whenever a pull request touches
+# matching files. Last matching pattern wins — see
+# https://docs.github.com/articles/about-codeowners
+
+* @aradvak1
