@@ -1,0 +1,53 @@
+name: Check ESLint 10 compatibility
+
+# PR #7 (eslint 9 -> 10) is blocked because eslint-config-next's bundled
+# eslint-plugin-react / typescript-eslint don't support ESLint 10 yet.
+# This runs daily, actually tries linting with ESLint 10 installed, and
+# only comments on the PR if it now passes -- no noise otherwise.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Check PR #7 is still open
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STATE=$(gh pr view 7 --json state -q .state)
+          echo "state=$STATE" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: steps.pr.outputs.state == 'OPEN'
+        run: npm ci
+
+      - name: Try linting with ESLint 10
+        if: steps.pr.outputs.state == 'OPEN'
+        id: trylint
+        run: |
+          npm install eslint@10 --no-save --no-package-lock
+          npm run lint && echo "result=pass" >> "$GITHUB_OUTPUT" || echo "result=fail" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR if now compatible
+        if: steps.pr.outputs.state == 'OPEN' && steps.trylint.outputs.result == 'pass'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment 7 --body "Automated daily check: \`npm run lint\` now passes with ESLint 10 installed — the upstream \`eslint-plugin-react\`/\`typescript-eslint\` incompatibility appears to be fixed. This PR may be safe to rebase and merge now."
