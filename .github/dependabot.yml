@@ -5,6 +5,16 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    groups:
+      react:
+        # react and react-dom must stay on matching versions (peer deps),
+        # and their type packages track them — bump all four together in
+        # one PR instead of separate PRs that can land out of sync.
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
 
   - package-ecosystem: "github-actions"
     directory: "/"
