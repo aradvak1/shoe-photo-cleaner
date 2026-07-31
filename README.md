@@ -4,6 +4,7 @@ A Next.js app for cleaning up shoe product photos (background removal, or full A
 
 ![Screenshot of the PHOTOS EDITOR landing page](.github/screenshot-landing.jpg)
 ![Screenshot of the photo gallery](.github/screenshot-gallery.jpg)
+![Screenshot of the catalog list](.github/screenshot-catalog.jpg)
 
 - Background removal & scene generation via [Photoroom](https://www.photoroom.com/api)
 - Storage & database via [Supabase](https://supabase.com)
