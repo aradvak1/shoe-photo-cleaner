@@ -28,7 +28,7 @@ export async function GET(request: Request) {
   if (batchId) {
     query = query.eq("batch_id", batchId);
   } else if (idsParam) {
-    query = query.in("ids", idsParam.split(","));
+    query = query.in("id", idsParam.split(","));
   }
 
   const { data: photos, error } = await query;

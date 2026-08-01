@@ -5,6 +5,7 @@ import { Dropzone } from "@/components/Dropzone";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
+import { resizeImageFile } from "@/lib/resizeImage";
 import type { Logo } from "@/types";
 
 export function useLogos() {
@@ -51,8 +52,9 @@ export function LogoSelect({
     try {
       let imageUrl: string | null = null;
       if (file) {
+        const uploadFile = await resizeImageFile(file);
         const formData = new FormData();
-        formData.append("image", file);
+        formData.append("image", uploadFile);
         const uploadRes = await fetch("/api/logos/upload", {
           method: "POST",
           body: formData,

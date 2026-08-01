@@ -7,6 +7,7 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
 import { Reveal } from "@/components/motion/Reveal";
+import { resizeImageFile } from "@/lib/resizeImage";
 import type { Logo } from "@/types";
 
 export default function LogosPage() {
@@ -43,8 +44,9 @@ export default function LogosPage() {
     try {
       let imageUrl: string | null = null;
       if (file) {
+        const uploadFile = await resizeImageFile(file);
         const formData = new FormData();
-        formData.append("image", file);
+        formData.append("image", uploadFile);
         const uploadRes = await fetch("/api/logos/upload", {
           method: "POST",
           body: formData,

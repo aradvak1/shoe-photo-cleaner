@@ -8,6 +8,29 @@ const DEFAULT_POSE = "standing";
 const DEFAULT_SCENE_PROMPT =
   "outdoor lifestyle scene, natural daylight, urban street, shallow depth of field";
 
+// Studio mode's default when the user hasn't typed a custom prompt — every
+// studio photo now goes through AI background generation (no more local
+// flat/gradient canvas), engineered to match a real commercial product
+// photoshoot: graduated backdrop, soft box glow, a believable contact
+// shadow, rather than something an AI render obviously produced.
+const DEFAULT_STUDIO_PROMPT =
+  "plain smooth solid color background, minimalist e-commerce product photo background, even gradient from white to very light gray, flat clean surface, no pattern, no texture, no fabric, no wrinkles, professional softbox lighting, clearly visible soft shadow directly beneath the product grounding it on the surface, high-end commercial catalog photography";
+
+// Appended to background.prompt on both AI-background paths — pushes toward
+// a photorealistic editorial look rather than an obviously-AI render. Best
+// effort only: virtualModel re-renders the product onto a generated model,
+// so it can't guarantee pixel-perfect fidelity to the source shoe photo.
+const QUALITY_SUFFIX =
+  "photorealistic, editorial fashion photography, natural lighting, shallow depth of field, high-end product photoshoot, DSLR quality, high detail";
+
+// Separate from background.prompt — Photoroom documents this as guiding
+// virtualModel's generation *style* specifically (their own example:
+// "street style"), distinct from the scene content itself. Includes
+// wardrobe styling too — without it the model tends to render in generic
+// casualwear rather than the elevated look a shoe photoshoot calls for.
+const VIRTUAL_MODEL_STYLE_PROMPT =
+  "editorial fashion photography, photorealistic, natural window lighting, shallow depth of field, high-end product photoshoot, DSLR quality, wearing an elegant tailored outfit, sophisticated designer wardrobe, luxury fashion styling";
+
 async function callPhotoroomEdit(
   fileBuffer: Buffer,
   filename: string,
@@ -46,44 +69,40 @@ async function callPhotoroomEdit(
   return Buffer.from(arrayBuffer);
 }
 
-/**
- * Calls Photoroom's segmentation model to cut the subject out of the
- * original photo, at the original resolution (up to Photoroom's 5000px
- * cap). Returns a transparent PNG buffer — compositing onto the final
- * white canvas happens locally in lib/composite.ts so every photo in the
- * catalog ends up on an identical canvas.
- */
-export async function removeBackground(
-  fileBuffer: Buffer,
-  filename: string,
-  mimeType: string
-): Promise<Buffer> {
-  return callPhotoroomEdit(fileBuffer, filename, mimeType, {
-    removeBackground: "true",
-    "export.format": "png",
-    maxWidth: "5000",
-    maxHeight: "5000",
-  });
-}
+// REVERTED: text-guided segmentation (segmentation.prompt="shoe" +
+// segmentation.negativePrompt="hand, arm, ...") was added to drop a
+// photographer's hand from handheld product shots, but on real photos it
+// fragmented the shoe itself into disconnected floating pieces instead of
+// a clean whole cutout — confirmed on a real result, a much worse failure
+// than the hand it was meant to fix. This was always flagged as a
+// Photoroom preview/alpha feature; it wasn't stable enough to keep on by
+// default. Plain removeBackground (no segmentation.* fields) is what the
+// functions below use.
+
+// Fixed 1080x1920 (9:16) output for the AI-background paths, which return a
+// fully composited image from Photoroom itself. scaling defaults to "fit" —
+// the subject is never cropped, the AI-expanded background fills whatever
+// space is left. outputSize and maxWidth/maxHeight are mutually exclusive
+// per Photoroom's API, so these calls drop maxWidth/maxHeight.
+const OUTPUT_SIZE = "1080x1920";
 
 /**
- * Studio mode with a custom AI-generated background instead of the local
- * white canvas. Returns a FULLY COMPOSITED PNG — callers must NOT run it
- * through compositeOnWhite() again.
+ * Studio mode: always AI-generates the background (no more local flat/
+ * gradient canvas) — falls back to DEFAULT_STUDIO_PROMPT when the user
+ * hasn't typed their own. Returns a FULLY COMPOSITED PNG.
  */
 export async function editWithBackgroundPrompt(
   fileBuffer: Buffer,
   filename: string,
   mimeType: string,
-  prompt: string
+  prompt?: string
 ): Promise<Buffer> {
   return callPhotoroomEdit(fileBuffer, filename, mimeType, {
     removeBackground: "true",
-    "background.prompt": prompt,
+    "background.prompt": `${prompt || DEFAULT_STUDIO_PROMPT}, ${QUALITY_SUFFIX}`,
     "background.expandPrompt.mode": "ai.auto",
     "export.format": "png",
-    maxWidth: "5000",
-    maxHeight: "5000",
+    outputSize: OUTPUT_SIZE,
   });
 }
 
@@ -114,11 +133,18 @@ export async function generateAtmosphereImage(
     "virtualModel.mode": "ai.auto",
     "virtualModel.model.preset.name": options.modelPreset ?? DEFAULT_MODEL_PRESET,
     "virtualModel.pose": options.pose ?? DEFAULT_POSE,
-    "background.prompt": options.prompt || DEFAULT_SCENE_PROMPT,
+    "virtualModel.prompt": VIRTUAL_MODEL_STYLE_PROMPT,
+    "background.prompt": `${options.prompt || DEFAULT_SCENE_PROMPT}, ${QUALITY_SUFFIX}`,
     "background.expandPrompt.mode": "ai.auto",
     "export.format": "png",
-    maxWidth: "5000",
-    maxHeight: "5000",
+    outputSize: OUTPUT_SIZE,
+    // virtualModel.mode generates at its own preferred aspect ratio and
+    // gets letterboxed into outputSize under the default "fit" scaling,
+    // producing visible white pillarbars — confirmed on a real result.
+    // "fill" makes it fill the canvas edge-to-edge (crops the scene, never
+    // the product). editWithBackgroundPrompt doesn't need this — already
+    // confirmed full-bleed with the default.
+    scaling: "fill",
   };
 
   return callPhotoroomEdit(fileBuffer, filename, mimeType, fields);
