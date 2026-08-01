@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { CATALOG_TEMPLATES } from "./templates";
-import type { CatalogPhotoEntry } from "./templates/types";
+import type { CatalogCoverData, CatalogPhotoEntry } from "./templates/types";
 
 /**
  * Renders a catalog PDF in an isolated child process — see renderWorker.ts
@@ -11,7 +11,8 @@ import type { CatalogPhotoEntry } from "./templates/types";
 export async function generateCatalogPdf(
   templateSlug: string,
   catalogName: string,
-  photos: CatalogPhotoEntry[]
+  photos: CatalogPhotoEntry[],
+  cover?: CatalogCoverData
 ): Promise<Buffer> {
   if (!CATALOG_TEMPLATES[templateSlug]) {
     throw new Error(`Unknown catalog template: ${templateSlug}`);
@@ -30,6 +31,14 @@ export async function generateCatalogPdf(
       sizeMin: p.sizeMin,
       sizeMax: p.sizeMax,
     })),
+    cover: cover
+      ? {
+          title: cover.title,
+          subtitle: cover.subtitle,
+          extraText: cover.extraText,
+          logoData: cover.logoData ? cover.logoData.toString("base64") : null,
+        }
+      : null,
   });
 
   return new Promise((resolve, reject) => {

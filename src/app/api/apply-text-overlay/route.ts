@@ -26,15 +26,31 @@ export async function POST(request: Request) {
   }
   const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
 
-  const burned = await burnProductText(imageBuffer, {
-    modelNumber: body.modelNumber ?? null,
-    sku: body.sku ?? null,
-    sizeMin: body.sizeMin ?? null,
-    sizeMax: body.sizeMax ?? null,
-    color: body.color ?? null,
-  });
-
   const supabase = getSupabaseAdmin();
+
+  let logoUrl: string | null = null;
+  const logoId = typeof body.logo_id === "string" ? body.logo_id : null;
+  if (logoId) {
+    const { data: logo } = await supabase
+      .from("logos")
+      .select("image_url")
+      .eq("id", logoId)
+      .single();
+    logoUrl = logo?.image_url ?? null;
+  }
+
+  const burned = await burnProductText(
+    imageBuffer,
+    {
+      modelNumber: body.modelNumber ?? null,
+      sku: body.sku ?? null,
+      sizeMin: body.sizeMin ?? null,
+      sizeMax: body.sizeMax ?? null,
+      color: body.color ?? null,
+    },
+    logoUrl
+  );
+
   const { error } = await supabase.storage
     .from(BUCKET)
     .upload(path, burned, { contentType: "image/png", upsert: true });

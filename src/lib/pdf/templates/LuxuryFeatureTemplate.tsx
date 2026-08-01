@@ -1,5 +1,6 @@
 import { Document, Page, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import { formatModelLine, formatPriceLine, formatSizeLine } from "./format";
+import { CoverPage } from "./CoverPage";
 import type { CatalogTemplateComponent } from "./types";
 
 const styles = StyleSheet.create({
@@ -34,11 +35,15 @@ const styles = StyleSheet.create({
   line: { fontSize: 12, textAlign: "center", direction: "rtl", color: "#7a6f5d", marginBottom: 3 },
 });
 
-export const LuxuryFeatureTemplate: CatalogTemplateComponent = ({ catalogName, photos }) => (
+export const LuxuryFeatureTemplate: CatalogTemplateComponent = ({ catalogName, photos, cover }) => (
   <Document>
-    <Page size="A4" style={styles.cover}>
-      <Text style={styles.coverTitle}>{catalogName}</Text>
-    </Page>
+    {cover ? (
+      <CoverPage catalogName={catalogName} cover={cover} />
+    ) : (
+      <Page size="A4" style={styles.cover}>
+        <Text style={styles.coverTitle}>{catalogName}</Text>
+      </Page>
+    )}
     {photos.map((photo, i) => (
       <Page key={i} size="A4" style={styles.page}>
         <Image style={styles.image} src={photo.imageData} />

@@ -8,6 +8,22 @@ export interface Logo {
   created_at: string;
 }
 
+export interface Preset {
+  id: string;
+  name: string;
+  mode: PhotoMode;
+  prompt: string | null;
+  logo_id: string | null;
+  burn_text: boolean;
+  model_number: string | null;
+  sku: string | null;
+  price: number | null;
+  size_min: number | null;
+  size_max: number | null;
+  color: string | null;
+  created_at: string;
+}
+
 export interface Photo {
   id: string;
   image_url: string;
@@ -32,12 +48,21 @@ export interface ProcessedImageResult {
   originalUrl: string;
 }
 
+export type CatalogStyleCategory = "atmosphere" | "studio_model" | "product";
+
 export interface Catalog {
   id: string;
   name: string;
   template_id: string;
   pdf_url: string | null;
   created_at: string;
+  style_category: CatalogStyleCategory | null;
+  look_id: string | null;
+  resolved_prompt: string | null;
+  cover_title: string | null;
+  cover_subtitle: string | null;
+  cover_extra_text: string | null;
+  cover_logo_id: string | null;
 }
 
 export interface CatalogPhoto {

@@ -1,8 +1,10 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { generateCatalogPdf } from "@/lib/pdf/generateCatalogPdf";
 import { CATALOG_TEMPLATES } from "@/lib/pdf/templates";
-import type { CatalogPhotoEntry } from "@/lib/pdf/templates/types";
-import type { Logo, Photo } from "@/types";
+import type { CatalogCoverData, CatalogPhotoEntry } from "@/lib/pdf/templates/types";
+import type { CatalogStyleCategory, Logo, Photo } from "@/types";
+
+const STYLE_CATEGORIES: CatalogStyleCategory[] = ["atmosphere", "studio_model", "product"];
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -45,6 +47,21 @@ export async function POST(request: Request) {
   const templateId = typeof body.template_id === "string" ? body.template_id : "";
   const photoIds: string[] = Array.isArray(body.photo_ids) ? body.photo_ids : [];
 
+  const styleCategory: CatalogStyleCategory | null = STYLE_CATEGORIES.includes(
+    body.style_category
+  )
+    ? body.style_category
+    : null;
+  const lookId = typeof body.look_id === "string" ? body.look_id : null;
+  const resolvedPrompt = typeof body.resolved_prompt === "string" ? body.resolved_prompt : null;
+  const coverTitle = typeof body.cover_title === "string" ? body.cover_title.trim() || null : null;
+  const coverSubtitle =
+    typeof body.cover_subtitle === "string" ? body.cover_subtitle.trim() || null : null;
+  const coverExtraText =
+    typeof body.cover_extra_text === "string" ? body.cover_extra_text.trim() || null : null;
+  const coverLogoId = typeof body.cover_logo_id === "string" ? body.cover_logo_id : null;
+  const hasCover = Boolean(coverTitle || coverSubtitle || coverExtraText || coverLogoId);
+
   if (!name) {
     return Response.json({ error: "Missing catalog name" }, { status: 400 });
   }
@@ -59,7 +76,17 @@ export async function POST(request: Request) {
 
   const { data: catalog, error: catalogError } = await supabase
     .from("catalogs")
-    .insert({ name, template_id: templateId })
+    .insert({
+      name,
+      template_id: templateId,
+      style_category: styleCategory,
+      look_id: lookId,
+      resolved_prompt: resolvedPrompt,
+      cover_title: coverTitle,
+      cover_subtitle: coverSubtitle,
+      cover_extra_text: coverExtraText,
+      cover_logo_id: coverLogoId,
+    })
     .select()
     .single();
   if (catalogError || !catalog) {
@@ -103,6 +130,25 @@ export async function POST(request: Request) {
     .map((id) => photosById.get(id))
     .filter((p): p is Photo => Boolean(p));
 
+  let cover: CatalogCoverData | undefined;
+  if (hasCover) {
+    let coverLogoUrl: string | null = null;
+    if (coverLogoId) {
+      const { data: coverLogo } = await supabase
+        .from("logos")
+        .select("image_url")
+        .eq("id", coverLogoId)
+        .single();
+      coverLogoUrl = coverLogo?.image_url ?? null;
+    }
+    cover = {
+      title: coverTitle,
+      subtitle: coverSubtitle,
+      extraText: coverExtraText,
+      logoData: await fetchAsBuffer(coverLogoUrl),
+    };
+  }
+
   const entries: CatalogPhotoEntry[] = await Promise.all(
     orderedPhotos.map(async (photo) => {
       const logo = photo.logo_id ? logosById.get(photo.logo_id) : null;
@@ -122,7 +168,7 @@ export async function POST(request: Request) {
     })
   );
 
-  const pdfBuffer = await generateCatalogPdf(templateId, name, entries);
+  const pdfBuffer = await generateCatalogPdf(templateId, name, entries, cover);
 
   const pdfPath = `${catalog.id}.pdf`;
   const { error: uploadError } = await supabase.storage

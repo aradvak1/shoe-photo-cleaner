@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import { formatModelLine, formatPriceLine, formatSizeLine } from "./format";
+import { CoverPage } from "./CoverPage";
 import type { CatalogTemplateComponent } from "./types";
 
 const styles = StyleSheet.create({
@@ -43,12 +44,17 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-export const BrandedTwoColumnTemplate: CatalogTemplateComponent = ({ catalogName, photos }) => {
+export const BrandedTwoColumnTemplate: CatalogTemplateComponent = ({
+  catalogName,
+  photos,
+  cover,
+}) => {
   const pages = chunk(photos, 6);
   const headerLogo = photos.find((p) => p.logoData)?.logoData ?? null;
 
   return (
     <Document>
+      {cover && <CoverPage catalogName={catalogName} cover={cover} />}
       {pages.map((pagePhotos, pageIndex) => (
         <Page key={pageIndex} size="A4" style={styles.page}>
           <View style={styles.header}>

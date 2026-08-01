@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import { formatModelLine, formatPriceLine, formatSizeLine } from "./format";
+import { CoverPage } from "./CoverPage";
 import type { CatalogTemplateComponent } from "./types";
 
 const styles = StyleSheet.create({
@@ -37,8 +38,9 @@ const styles = StyleSheet.create({
   },
 });
 
-export const MinimalListTemplate: CatalogTemplateComponent = ({ catalogName, photos }) => (
+export const MinimalListTemplate: CatalogTemplateComponent = ({ catalogName, photos, cover }) => (
   <Document>
+    {cover && <CoverPage catalogName={catalogName} cover={cover} />}
     <Page size="A4" style={styles.page}>
       <Text style={styles.title}>{catalogName}</Text>
       {photos.map((photo, i) => (

@@ -6,14 +6,14 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Reveal } from "@/components/motion/Reveal";
+import { CATALOG_TEMPLATE_META } from "@/lib/pdf/templates/meta";
 import type { Photo } from "@/types";
 
-const TEMPLATES = [
-  { id: "classic-grid", label: "רשת קלאסית", description: "עד 4 מוצרים בעמוד, כרטיסים עם מסגרת." },
-  { id: "minimal-list", label: "רשימה מינימלית", description: "רשימה צפופה עם תמונה קטנה לכל שורה." },
-  { id: "luxury-feature", label: "מוצר בודד לעמוד", description: "עמוד שער ואז מוצר אחד גדול בכל עמוד." },
-  { id: "two-column-brand", label: "ממותג, שתי עמודות", description: "לוגו בכותרת כל עמוד, עד 6 מוצרים בעמוד." },
-] as const;
+const TEMPLATES = CATALOG_TEMPLATE_META.map((t) => ({
+  id: t.slug,
+  label: t.label,
+  description: t.description,
+}));
 
 export function CatalogBuilder() {
   const router = useRouter();

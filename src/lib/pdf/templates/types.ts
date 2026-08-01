@@ -9,9 +9,18 @@ export interface CatalogPhotoEntry {
   sizeMax: number | null;
 }
 
+export interface CatalogCoverData {
+  title: string | null;
+  subtitle: string | null;
+  extraText: string | null;
+  logoData: Buffer | null;
+}
+
 export interface CatalogTemplateProps {
   catalogName: string;
   photos: CatalogPhotoEntry[];
+  /** Absent entirely = render exactly as before (no cover page changes for older catalogs). */
+  cover?: CatalogCoverData;
 }
 
 export type CatalogTemplateComponent = React.FC<CatalogTemplateProps>;

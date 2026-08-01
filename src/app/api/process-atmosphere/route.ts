@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { generateAtmosphereImage } from "@/lib/photoroom";
+import { generateAtmosphereImage } from "@/lib/gemini";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";

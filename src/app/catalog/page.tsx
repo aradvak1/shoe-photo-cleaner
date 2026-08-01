@@ -28,7 +28,12 @@ export default function CatalogListPage() {
             קטלוגי PDF שנוצרו מתמונות שמורות, מוכנים לשליחה ללקוחות.
           </p>
         </div>
-        <Button href="/photos">בחירת תמונות לקטלוג חדש</Button>
+        <div className="flex gap-3">
+          <Button href="/catalog/wizard">קטלוג מודרך חדש (עם AI)</Button>
+          <Button href="/photos" variant="secondary">
+            בחירת תמונות לקטלוג חדש
+          </Button>
+        </div>
       </div>
 
       {loading ? (

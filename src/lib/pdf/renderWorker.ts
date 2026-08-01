@@ -28,7 +28,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
 import { registerCatalogFonts } from "./fonts";
 import { CATALOG_TEMPLATES } from "./templates";
-import type { CatalogPhotoEntry } from "./templates/types";
+import type { CatalogCoverData, CatalogPhotoEntry } from "./templates/types";
 
 interface WorkerInput {
   templateSlug: string;
@@ -42,6 +42,12 @@ interface WorkerInput {
     sizeMin: number | null;
     sizeMax: number | null;
   }>;
+  cover: {
+    title: string | null;
+    subtitle: string | null;
+    extraText: string | null;
+    logoData: string | null;
+  } | null;
 }
 
 function readStdin(): Promise<string> {
@@ -76,9 +82,19 @@ async function main() {
     sizeMax: p.sizeMax,
   }));
 
+  const cover: CatalogCoverData | undefined = input.cover
+    ? {
+        title: input.cover.title,
+        subtitle: input.cover.subtitle,
+        extraText: input.cover.extraText,
+        logoData: input.cover.logoData ? Buffer.from(input.cover.logoData, "base64") : null,
+      }
+    : undefined;
+
   const element = React.createElement(template.component, {
     catalogName: input.catalogName,
     photos,
+    cover,
   }) as Parameters<typeof renderToBuffer>[0];
 
   const buffer = await renderToBuffer(element);

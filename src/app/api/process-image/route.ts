@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { removeBackground, editWithBackgroundPrompt } from "@/lib/photoroom";
-import { compositeOnWhite } from "@/lib/composite";
+import { editWithBackgroundPrompt } from "@/lib/gemini";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -26,11 +25,7 @@ export async function POST(request: Request) {
   const supabase = getSupabaseAdmin();
 
   const [cleanImage, originalUpload] = await Promise.all([
-    customPrompt
-      ? editWithBackgroundPrompt(originalBuffer, file.name, mimeType, customPrompt)
-      : removeBackground(originalBuffer, file.name, mimeType).then((cutout) =>
-          compositeOnWhite(cutout, { withShadow: false })
-        ),
+    editWithBackgroundPrompt(originalBuffer, file.name, mimeType, customPrompt),
     supabase.storage
       .from("originals")
       .upload(originalPath, originalBuffer, {

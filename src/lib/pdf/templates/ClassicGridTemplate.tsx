@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import { formatModelLine, formatPriceLine, formatSizeLine } from "./format";
+import { CoverPage } from "./CoverPage";
 import type { CatalogTemplateComponent } from "./types";
 
 const styles = StyleSheet.create({
@@ -40,10 +41,11 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-export const ClassicGridTemplate: CatalogTemplateComponent = ({ catalogName, photos }) => {
+export const ClassicGridTemplate: CatalogTemplateComponent = ({ catalogName, photos, cover }) => {
   const pages = chunk(photos, 4);
   return (
     <Document>
+      {cover && <CoverPage catalogName={catalogName} cover={cover} />}
       {pages.map((pagePhotos, pageIndex) => (
         <Page key={pageIndex} size="A4" style={styles.page}>
           {pageIndex === 0 && <Text style={styles.title}>{catalogName}</Text>}
