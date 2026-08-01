@@ -6,7 +6,7 @@ A Next.js app for cleaning up shoe product photos (background removal, or full A
 ![Screenshot of the photo gallery](.github/screenshot-gallery.jpg)
 ![Screenshot of the catalog list](.github/screenshot-catalog.jpg)
 
-- Background removal & scene generation via [Photoroom](https://www.photoroom.com/api)
+- Background removal & scene generation via [Gemini](https://ai.google.dev) (`gemini-2.5-flash-image`)
 - Storage & database via [Supabase](https://supabase.com)
 - PDF catalogs via `@react-pdf/renderer`, rendered in an isolated worker process
 - Dark "studio" design system with [`motion`](https://motion.dev) for animations
@@ -15,7 +15,7 @@ A Next.js app for cleaning up shoe product photos (background removal, or full A
 
 - Node.js 20+
 - A [Supabase](https://supabase.com) project (Postgres + Storage)
-- A [Photoroom](https://www.photoroom.com/api) API key
+- A [Gemini API](https://ai.google.dev) key
 
 ## Setup
 
@@ -33,10 +33,10 @@ A Next.js app for cleaning up shoe product photos (background removal, or full A
    SUPABASE_URL=
    SUPABASE_SERVICE_ROLE_KEY=
    POSTGRES_URL_NON_POOLING=
-   PHOTOROOM_API_KEY=
+   GEMINI_API_KEY=
    ```
 
-   If the Supabase project is provisioned through the Vercel Marketplace integration, these (plus a few extra Postgres connection strings) can be pulled directly with `vercel env pull .env.local`. Otherwise, get the Supabase values from **Project Settings → API** and **Project Settings → Database** in the Supabase dashboard, and the Photoroom key from the Photoroom dashboard.
+   If the Supabase project is provisioned through the Vercel Marketplace integration, these (plus a few extra Postgres connection strings) can be pulled directly with `vercel env pull .env.local`. Otherwise, get the Supabase values from **Project Settings → API** and **Project Settings → Database** in the Supabase dashboard, and the Gemini key from [Google AI Studio](https://aistudio.google.com/apikey).
 
 3. **Database schema** — apply the base schema and migrations in order (run from the `scripts/` directory context, or reference the path as shown):
 
@@ -81,6 +81,6 @@ Environment variables must be configured in the Vercel project (or provisioned a
 
 - `src/app/` — routes (App Router): landing page, `/start` hub, `/create` (studio/atmosphere editing), `/photos` (gallery), `/logos`, `/catalog` (PDF catalog builder)
 - `src/components/` — shared UI (`ui/`), motion primitives (`motion/`), and feature components
-- `src/lib/` — Photoroom client, image compositing (`sharp`), PDF generation
+- `src/lib/` — Gemini client, image compositing (`sharp`), PDF generation
 - `supabase/` — SQL schema and migrations
 - `scripts/` — one-off Node scripts (migrations, bucket setup, PDF worker bundling)

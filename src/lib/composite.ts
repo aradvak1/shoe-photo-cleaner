@@ -1,8 +1,8 @@
 import path from "node:path";
 import sharp from "sharp";
 
-// Studio-mode photos are now always AI-composited by Photoroom itself
-// (lib/photoroom.ts's editWithBackgroundPrompt) at this fixed 1080x1920
+// Studio-mode photos are now always AI-composited by Gemini itself
+// (lib/gemini.ts's editWithBackgroundPrompt) at this fixed 1080x1920
 // size — these constants only remain as the metadata-fallback dimensions
 // burnProductText uses below when a saved image's own size can't be read.
 const CANVAS_WIDTH = Number(process.env.CANVAS_WIDTH ?? 1080);
