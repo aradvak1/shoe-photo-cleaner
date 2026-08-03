@@ -184,6 +184,13 @@ export function useImageCreationQueue({
     }
   }
 
+  /** Re-runs one failed row with the batch's current (already-approved) prompt — lets the user fix a single failure without redoing the whole batch. */
+  async function retryRow(rowId: string) {
+    const row = rows.find((r) => r.id === rowId);
+    if (!row) return;
+    await processRow(row, customPrompt);
+  }
+
   const [sample, setSample] = useState<SampleState>({ phase: "idle" });
 
   /**
@@ -371,5 +378,6 @@ export function useImageCreationQueue({
     sample,
     approveSample,
     rejectSample,
+    retryRow,
   };
 }

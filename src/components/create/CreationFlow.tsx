@@ -82,6 +82,7 @@ export function CreationFlow({
     sample,
     approveSample,
     rejectSample,
+    retryRow,
   } = useImageCreationQueue({ endpoint, mode, autoProcess: false, initialPrompt, onSaved });
 
   const [previewRow, setPreviewRow] = useState<CreationRow | null>(null);
@@ -92,6 +93,7 @@ export function CreationFlow({
   const isProcessing = total > 0 && doneCount < total;
   const hasPending = rows.some((r) => r.status === "pending");
   const isStarting = rows.some((r) => r.status === "processing");
+  const errorCount = rows.filter((r) => r.status === "error").length;
 
   return (
     <div className="space-y-6">
@@ -155,11 +157,17 @@ export function CreationFlow({
       </Card>
 
       {total > 0 && (
-        <ProgressBar
-          value={doneCount}
-          max={total}
-          label={`${doneCount} מתוך ${total} עובדו${isProcessing ? "…" : ""}`}
-        />
+        <div className="space-y-1">
+          <ProgressBar
+            value={doneCount}
+            max={total}
+            label={`${doneCount} מתוך ${total} עובדו${isProcessing ? "…" : ""}`}
+          />
+          <p className="text-xs text-muted">
+            {readyCount} מוכנות להורדה
+            {errorCount > 0 && <span className="text-danger"> · {errorCount} נכשלו — פירוט בטבלה למטה</span>}
+          </p>
+        </div>
       )}
 
       {rows.length > 0 && (
@@ -205,20 +213,46 @@ export function CreationFlow({
                     disabled={row.status !== "pending"}
                     onLogoAdded={(logo) => setLogos((prev) => [...prev, logo])}
                   />
-                  <td className="px-3 py-2">
+                  <td className="max-w-[16rem] px-3 py-2">
                     {row.status === "pending" && <Badge tone="pending">ממתין</Badge>}
                     {row.status === "processing" && (
                       <Badge tone="pending">מעבד…</Badge>
                     )}
-                    {row.status === "done" && <Badge tone="success">מוכן</Badge>}
+                    {row.status === "done" && (
+                      <div className="flex items-center gap-2">
+                        <Badge tone="success">מוכן</Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          href={row.imageUrl}
+                          download
+                          className="px-1.5 py-0.5 text-xs"
+                        >
+                          הורדה
+                        </Button>
+                      </div>
+                    )}
                     {row.status === "error" && (
-                      <Badge
-                        tone="danger"
-                        className="cursor-pointer"
-                        onClick={() => setErrorRow(row)}
-                      >
-                        שגיאה
-                      </Badge>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            tone="danger"
+                            className="cursor-pointer"
+                            onClick={() => setErrorRow(row)}
+                          >
+                            שגיאה
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="px-1.5 py-0.5 text-xs"
+                            onClick={() => retryRow(row.id)}
+                          >
+                            ניסיון חוזר
+                          </Button>
+                        </div>
+                        <p className="text-xs text-danger">{row.error}</p>
+                      </div>
                     )}
                   </td>
                 </tr>
