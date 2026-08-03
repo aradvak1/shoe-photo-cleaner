@@ -138,7 +138,14 @@ export function useImageCreationQueue({
     formData.append("image", uploadFile);
     if (prompt.trim()) formData.append("prompt", prompt.trim());
     const res = await fetch(endpoint, { method: "POST", body: formData });
-    const data = await res.json();
+    let data: { imageUrl?: string; originalUrl?: string; error?: string };
+    try {
+      data = await res.json();
+    } catch {
+      // A truncated/empty body — almost always the server function's own
+      // timeout killing it mid-response, not a real "error" from our code.
+      throw new Error("התהליך נעצר באמצע (לרוב עומס רשת או זמן עיבוד ארוך מהצפוי). נסו שוב.");
+    }
     if (!res.ok) throw new Error(data.error || "עיבוד נכשל");
     return { imageUrl: data.imageUrl as string, originalUrl: data.originalUrl as string };
   }

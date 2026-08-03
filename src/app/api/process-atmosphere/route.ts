@@ -3,7 +3,11 @@ import { generateAtmosphereImage } from "@/lib/gemini";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 90;
+// Raised from 90s after production reports of the Gemini round-trip
+// occasionally outrunning it on real (non-dev) network/cold-start
+// conditions, which truncates the response mid-stream and surfaces to the
+// client as "Unexpected end of JSON input". Vercel Pro allows up to 300s.
+export const maxDuration = 150;
 
 export async function POST(request: Request) {
   const formData = await request.formData();
