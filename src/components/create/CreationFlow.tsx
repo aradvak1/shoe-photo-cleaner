@@ -189,23 +189,22 @@ export function CreationFlow({
               {rows.map((row) => (
                 <tr key={row.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2">
-                    {row.imageUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => setPreviewRow(row)}
-                        className="block rounded-sm transition-transform active:scale-95"
-                        title="לחצו להגדלה"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={row.imageUrl}
-                          alt={row.file.name}
-                          className="h-14 w-14 rounded-sm border border-border bg-white object-contain"
-                        />
-                      </button>
-                    ) : (
-                      <div className="skeleton-shimmer h-14 w-14 animate-shimmer rounded-sm border border-border" />
-                    )}
+                    {/* Shows the raw uploaded photo until the AI result replaces
+                        it, so a batch of many "ממתין" rows stays identifiable
+                        (which shoe/color is which) while filling in fields. */}
+                    <button
+                      type="button"
+                      onClick={() => setPreviewRow(row)}
+                      className="block rounded-sm transition-transform active:scale-95"
+                      title="לחצו להגדלה"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={row.imageUrl ?? row.originalPreviewUrl}
+                        alt={row.file.name}
+                        className="h-14 w-14 rounded-sm border border-border bg-white object-contain"
+                      />
+                    </button>
                   </td>
                   <td className="max-w-[9rem] truncate px-3 py-2 text-muted">
                     {row.file.name}
@@ -284,17 +283,23 @@ export function CreationFlow({
         title={previewRow?.file.name ?? "תצוגה מקדימה"}
         size="lg"
       >
-        {previewRow?.imageUrl && (
+        {previewRow && (
           <div className="space-y-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={previewRow.imageUrl}
+              src={previewRow.imageUrl ?? previewRow.originalPreviewUrl}
               alt={previewRow.file.name}
               className="max-h-[70vh] w-full rounded-sm border border-border bg-white object-contain"
             />
-            <Button href={previewRow.imageUrl} download className="w-full">
-              הורדת התמונה
-            </Button>
+            {previewRow.imageUrl ? (
+              <Button href={previewRow.imageUrl} download className="w-full">
+                הורדת התמונה
+              </Button>
+            ) : (
+              <p className="text-center text-xs text-muted">
+                זו התמונה המקורית שהעליתם — התוצאה המעובדת עוד לא מוכנה.
+              </p>
+            )}
           </div>
         )}
       </Dialog>

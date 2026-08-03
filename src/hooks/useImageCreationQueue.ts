@@ -11,6 +11,8 @@ export interface CreationRow {
   id: string;
   file: File;
   status: RowStatus;
+  /** Client-side object URL of the raw uploaded file — shown as the row's thumbnail before/while processing, so a batch of many "ממתין" rows is still visually identifiable (which shoe/color is which) before any AI result exists. */
+  originalPreviewUrl: string;
   imageUrl?: string;
   originalUrl?: string;
   error?: string;
@@ -294,6 +296,7 @@ export function useImageCreationQueue({
       id: crypto.randomUUID(),
       file,
       status: "pending",
+      originalPreviewUrl: URL.createObjectURL(file),
       modelNumber: defaults.modelNumber ?? "",
       sku: defaults.sku ?? "",
       price: defaults.price ?? "",
