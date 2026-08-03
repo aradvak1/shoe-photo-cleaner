@@ -6,13 +6,15 @@
 //
 // All positions are fractions of canvas width/height (not raw pixels), so
 // the same template applies correctly regardless of the actual generated
-// photo's resolution. They were derived by exporting the source Canva
-// design (DAHRObCb2Y4) at its native 1080x1350 and measuring each
-// element's rendered pixel bounding box directly — Canva's own reported
-// element "pos" coordinates for this design don't line up with the
-// rendered output (some exceed the canvas width entirely), so trust the
-// pixel measurement, not the design's raw CDF position data, if this ever
-// needs re-deriving.
+// photo's resolution. The logo position/size and the three text fields
+// were originally derived by exporting a source Canva design (DAHRObCb2Y4)
+// at its native 1080x1350 and measuring each element's rendered pixel
+// bounding box directly (Canva's own reported element "pos" coordinates
+// for that design didn't line up with the rendered output). The text
+// fields were later redesigned per user feedback into one symmetric
+// bottom-right stacked column (דגם / מידות / מחיר, all centered on the
+// same X) instead of the original design's split left/right placement,
+// and the logo was enlarged ~25% — both hand-tuned, not re-measured.
 
 export interface TemplateLogoField {
   leftFraction: number;
@@ -47,26 +49,30 @@ export const PHOTO_TEMPLATES: PhotoTemplate[] = [
     logo: {
       leftFraction: 84 / 1080,
       topFraction: 152 / 1350,
-      widthFraction: 319 / 1080,
-      heightFraction: 242 / 1350,
+      widthFraction: 400 / 1080,
+      heightFraction: 303 / 1350,
     },
+    // All three text fields form one symmetric stacked column, bottom-right,
+    // sharing the same centerXFraction so every line lines up regardless of
+    // its text length — replaces the original design's split left/right
+    // placement, which read as unbalanced once real values were filled in.
     modelNumber: {
-      centerXFraction: 931.5 / 1080,
-      centerYFraction: 1251.5 / 1350,
+      centerXFraction: 900 / 1080,
+      centerYFraction: 1135 / 1350,
       fontSizeFraction: 66.6667 / 1080,
       label: "דגם : ",
     },
-    price: {
-      centerXFraction: 236 / 1080,
-      centerYFraction: 1285.5 / 1350,
-      fontSizeFraction: 49.3338 / 1080,
-      label: "מחיר : ",
-    },
     sizes: {
-      centerXFraction: 247.5 / 1080,
-      centerYFraction: 1202.5 / 1350,
+      centerXFraction: 900 / 1080,
+      centerYFraction: 1220 / 1350,
       fontSizeFraction: 49.3338 / 1080,
       label: "מידות : ",
+    },
+    price: {
+      centerXFraction: 900 / 1080,
+      centerYFraction: 1285 / 1350,
+      fontSizeFraction: 49.3338 / 1080,
+      label: "מחיר : ",
     },
   },
 ];
