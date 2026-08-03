@@ -91,11 +91,47 @@ export function CreationFlow({
   const [errorRow, setErrorRow] = useState<CreationRow | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const sampleDialogOpen = sample.phase === "generating" || sample.phase === "awaiting-approval";
   const isProcessing = total > 0 && doneCount < total;
   const hasPending = rows.some((r) => r.status === "pending");
   const isStarting = rows.some((r) => r.status === "processing");
   const errorCount = rows.filter((r) => r.status === "error").length;
+
+  // A plain <a href> to the export endpoint would navigate the whole page
+  // away on failure — the browser then renders the raw {"error": "..."}
+  // JSON body in place of the entire app, wiping every in-progress row.
+  // Fetching manually keeps the SPA (and all its state) intact no matter
+  // what the endpoint returns, success or failure.
+  async function handleExport() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const res = await fetch(`/api/export?batch_id=${batchId}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(
+          data.error === "No photos found for export"
+            ? 'עוד לא שמרתם תמונות מהאצווה הזו — לחצו קודם על "שמירה" למעלה, ורק אז על ייצוא.'
+            : data.error || "הייצוא נכשל"
+        );
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "catalog-export.zip";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "הייצוא נכשל");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -271,9 +307,10 @@ export function CreationFlow({
             {saving ? "שומר…" : `שמירת ${readyCount} פריטים`}
           </Button>
           {saveMessage && <p className="text-sm text-muted">{saveMessage}</p>}
-          <Button variant="secondary" href={`/api/export?batch_id=${batchId}`}>
-            ייצוא ZIP + CSV
+          <Button variant="secondary" onClick={handleExport} disabled={exporting}>
+            {exporting ? "מייצא…" : "ייצוא ZIP + CSV"}
           </Button>
+          {exportError && <p className="text-sm text-danger">{exportError}</p>}
         </div>
       )}
 
