@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { useImageCreationQueue } from "@/hooks/useImageCreationQueue";
 import { downloadFile } from "@/lib/downloadFile";
+import { PHOTO_TEMPLATES } from "@/lib/photoTemplate";
 import { PhotoMetadataFields } from "@/components/create/PhotoMetadataFields";
 import { PresetBar } from "@/components/create/PresetBar";
 import type { CreationRow } from "@/hooks/useImageCreationQueue";
@@ -184,6 +186,37 @@ export function CreationFlow({
               onLogoAdded={(logo) => setLogos((prev) => [...prev, logo])}
             />
           </div>
+          {mode === "studio" && (
+            <Select
+              label="תבנית תמונה"
+              value={templateId}
+              disabled={started}
+              onChange={(e) => {
+                const id = e.target.value;
+                setTemplateId(id);
+                if (id) setBurnText(true);
+              }}
+            >
+              <option value="">ללא תבנית (מיקום אוטומטי לפי התמונה)</option>
+              {PHOTO_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </Select>
+          )}
+          {!templateId && (
+            <label className="flex items-center gap-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                checked={burnText}
+                disabled={started}
+                onChange={(e) => setBurnText(e.target.checked)}
+                className="h-4 w-4 accent-accent"
+              />
+              לצרוב את הפרטים (לוגו, דגם ועוד) על התמונה
+            </label>
+          )}
           <Dropzone multiple label={copy.dropLabel} onFiles={addFiles} />
           {hasPending && (
             <Button onClick={startProcessing} disabled={isStarting}>
@@ -252,6 +285,7 @@ export function CreationFlow({
                     logos={logos}
                     disabled={row.status !== "pending"}
                     onLogoAdded={(logo) => setLogos((prev) => [...prev, logo])}
+                    burnsPrice={Boolean(templateId)}
                   />
                   <td className="max-w-[16rem] px-3 py-2">
                     {row.status === "pending" && <Badge tone="pending">ממתין</Badge>}

@@ -60,12 +60,15 @@ export function MetadataFieldPicker({
   logos,
   disabled,
   onLogoAdded,
+  burnsPrice = false,
 }: {
   values: RowMetadataValues;
   onChange: (patch: Partial<RowMetadataValues>) => void;
   logos: Logo[];
   disabled?: boolean;
   onLogoAdded?: (logo: Logo) => void;
+  /** True when a fixed template with a price slot is active — otherwise price never gets burned onto the photo. */
+  burnsPrice?: boolean;
 }) {
   // Fields with a value are always "open" (derived from live values, so
   // externally-set values — a default logo backfill, an applied preset —
@@ -196,7 +199,9 @@ export function MetadataFieldPicker({
 
       {openFields.has("price") && (
         <p className="mt-1 text-[10px] text-muted">
-          מחיר משמש לגלריה ולקטלוג בלבד — לעולם לא נצרב על התמונה.
+          {burnsPrice
+            ? "המחיר יופיע על התמונה במיקום שנקבע בתבנית."
+            : "מחיר משמש לגלריה ולקטלוג בלבד — לא נצרב על התמונה (בחרו תבנית תמונה כדי לצרוב גם מחיר)."}
         </p>
       )}
     </div>
