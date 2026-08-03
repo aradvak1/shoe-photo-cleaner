@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useLogos } from "@/components/LogoSelect";
+import { downloadFile } from "@/lib/downloadFile";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -119,6 +120,17 @@ export default function PhotosPage() {
                         {photo.mode === "atmosphere" ? "אווירה" : "סטודיו"}
                       </Badge>
                     </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadFile(photo.image_url, `${photo.model_number || photo.id}.png`);
+                      }}
+                    >
+                      הורדה
+                    </Button>
                   </CardBody>
                 </Card>
               </Reveal>

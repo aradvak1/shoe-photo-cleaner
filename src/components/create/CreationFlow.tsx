@@ -10,6 +10,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Textarea } from "@/components/ui/Textarea";
 import { useImageCreationQueue } from "@/hooks/useImageCreationQueue";
+import { downloadFile } from "@/lib/downloadFile";
 import { PhotoMetadataFields } from "@/components/create/PhotoMetadataFields";
 import { PresetBar } from "@/components/create/PresetBar";
 import type { CreationRow } from "@/hooks/useImageCreationQueue";
@@ -263,9 +264,11 @@ export function CreationFlow({
                         <Button
                           variant="ghost"
                           size="sm"
-                          href={row.imageUrl}
-                          download
                           className="px-1.5 py-0.5 text-xs"
+                          onClick={() =>
+                            row.imageUrl &&
+                            downloadFile(row.imageUrl, `${row.modelNumber || row.file.name}.png`)
+                          }
                         >
                           הורדה
                         </Button>
@@ -329,7 +332,15 @@ export function CreationFlow({
               className="max-h-[70vh] w-full rounded-sm border border-border bg-white object-contain"
             />
             {previewRow.imageUrl ? (
-              <Button href={previewRow.imageUrl} download className="w-full">
+              <Button
+                onClick={() =>
+                  downloadFile(
+                    previewRow.imageUrl!,
+                    `${previewRow.modelNumber || previewRow.file.name}.png`
+                  )
+                }
+                className="w-full"
+              >
                 הורדת התמונה
               </Button>
             ) : (
