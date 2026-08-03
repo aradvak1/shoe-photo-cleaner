@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody } from "@/components/ui/Card";
+import { CatalogTemplateEditor } from "@/components/catalog/CatalogTemplateEditor";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { Photo } from "@/types";
 
@@ -37,7 +38,10 @@ export default async function CatalogDetailPage({
           <h1 className="text-2xl font-semibold">{catalog.name}</h1>
           <p className="mt-1 text-sm text-muted">{photos.length} תמונות</p>
         </div>
-        {catalog.pdf_url && <Button href={catalog.pdf_url}>הורדת PDF</Button>}
+        <div className="flex items-center gap-2">
+          <CatalogTemplateEditor catalogId={catalog.id} currentTemplateId={catalog.template_id} />
+          {catalog.pdf_url && <Button href={catalog.pdf_url}>הורדת PDF</Button>}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">

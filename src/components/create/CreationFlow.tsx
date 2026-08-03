@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dropzone } from "@/components/Dropzone";
 import { LogoSelect, useLogos } from "@/components/LogoSelect";
 import { Badge } from "@/components/ui/Badge";
@@ -90,12 +90,94 @@ export function CreationFlow({
     retryRow,
   } = useImageCreationQueue({ endpoint, mode, autoProcess: false, initialPrompt, onSaved });
 
-  const [previewRow, setPreviewRow] = useState<CreationRow | null>(null);
+  const [previewRowId, setPreviewRowId] = useState<string | null>(null);
   const [errorRow, setErrorRow] = useState<CreationRow | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const previewRow = rows.find((r) => r.id === previewRowId) ?? null;
+  const [livePreviewUrl, setLivePreviewUrl] = useState<string | null>(null);
+  const [livePreviewLoading, setLivePreviewLoading] = useState(false);
+  const livePreviewBlobRef = useRef<string | null>(null);
+
+  // Live-renders exactly what will be saved (zoom + logo + fields, template
+  // or auto-placement) whenever any of them change while the preview dialog
+  // is open — mirrors the reference tool's live card preview instead of only
+  // finding out what the final photo looks like after saving. Skipped when
+  // the row is already burned: finalizeRow() burns immediately (not just at
+  // saveAll time) whenever burnable fields were already set the moment its
+  // sample got approved/generation finished — same "alreadyBurned" case
+  // saveAll() itself already guards against — so imageUrl is no longer the
+  // clean photo and re-rendering here would burn a second logo/text on top.
+  useEffect(() => {
+    if (
+      mode !== "studio" ||
+      !previewRow ||
+      previewRow.status !== "done" ||
+      !previewRow.imageUrl ||
+      previewRow.alreadyBurned
+    ) {
+      return;
+    }
+    const row = previewRow;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      setLivePreviewLoading(true);
+      try {
+        const res = await fetch("/api/preview-overlay", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image_url: row.imageUrl,
+            modelNumber: row.modelNumber || null,
+            sku: row.sku || null,
+            price: row.price ? Number(row.price) : null,
+            sizeMin: row.sizeMin ? Number(row.sizeMin) : null,
+            sizeMax: row.sizeMax ? Number(row.sizeMax) : null,
+            color: row.color || null,
+            logo_id: row.logoId || null,
+            template_id: templateId || null,
+            zoom: row.zoom,
+          }),
+        });
+        if (!res.ok || cancelled) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        if (livePreviewBlobRef.current) URL.revokeObjectURL(livePreviewBlobRef.current);
+        livePreviewBlobRef.current = url;
+        setLivePreviewUrl(url);
+      } finally {
+        if (!cancelled) setLivePreviewLoading(false);
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    mode,
+    previewRow?.imageUrl,
+    previewRow?.status,
+    previewRow?.modelNumber,
+    previewRow?.sku,
+    previewRow?.price,
+    previewRow?.sizeMin,
+    previewRow?.sizeMax,
+    previewRow?.color,
+    previewRow?.logoId,
+    previewRow?.zoom,
+    templateId,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (livePreviewBlobRef.current) URL.revokeObjectURL(livePreviewBlobRef.current);
+    };
+  }, []);
   const sampleDialogOpen = sample.phase === "generating" || sample.phase === "awaiting-approval";
   const isProcessing = total > 0 && doneCount < total;
   const hasPending = rows.some((r) => r.status === "pending");
@@ -264,7 +346,10 @@ export function CreationFlow({
                         (which shoe/color is which) while filling in fields. */}
                     <button
                       type="button"
-                      onClick={() => setPreviewRow(row)}
+                      onClick={() => {
+                        setLivePreviewUrl(null);
+                        setPreviewRowId(row.id);
+                      }}
                       className="block rounded-sm transition-transform active:scale-95"
                       title="לחצו להגדלה"
                     >
@@ -283,7 +368,14 @@ export function CreationFlow({
                     values={row}
                     onChange={(patch) => updateRow(row.id, patch)}
                     logos={logos}
-                    disabled={row.status !== "pending"}
+                    // Studio rows burn at saveAll() time, not immediately, so
+                    // fields stay editable through "done" — atmosphere rows
+                    // are already burned by then and must stay locked.
+                    disabled={
+                      mode === "studio"
+                        ? row.status !== "pending" && row.status !== "done"
+                        : row.status !== "pending"
+                    }
                     onLogoAdded={(logo) => setLogos((prev) => [...prev, logo])}
                     burnsPrice={Boolean(templateId)}
                   />
@@ -353,26 +445,54 @@ export function CreationFlow({
 
       <Dialog
         open={previewRow !== null}
-        onClose={() => setPreviewRow(null)}
+        onClose={() => {
+          setPreviewRowId(null);
+          setLivePreviewUrl(null);
+        }}
         title={previewRow?.file.name ?? "תצוגה מקדימה"}
         size="lg"
       >
         {previewRow && (
           <div className="space-y-4">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={previewRow.imageUrl ?? previewRow.originalPreviewUrl}
-              alt={previewRow.file.name}
-              className="max-h-[70vh] w-full rounded-sm border border-border bg-white object-contain"
-            />
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={livePreviewUrl ?? previewRow.imageUrl ?? previewRow.originalPreviewUrl}
+                alt={previewRow.file.name}
+                className="max-h-[70vh] w-full rounded-sm border border-border bg-white object-contain"
+              />
+              {livePreviewLoading && (
+                <div className="absolute inset-x-0 bottom-0 bg-ink/60 py-1 text-center text-xs text-white">
+                  מעדכן תצוגה מקדימה…
+                </div>
+              )}
+            </div>
+            {mode === "studio" && previewRow.status === "done" && !previewRow.alreadyBurned && (
+              <div>
+                <div className="mb-1 flex items-center justify-between text-xs text-muted">
+                  <span>גודל המוצר בתוך התמונה</span>
+                  <span>{previewRow.zoom}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={70}
+                  max={160}
+                  step={5}
+                  value={previewRow.zoom}
+                  onChange={(e) => updateRow(previewRow.id, { zoom: Number(e.target.value) })}
+                  className="w-full accent-accent"
+                />
+                <p className="mt-1 text-[10px] text-muted">
+                  ערך גבוה יותר ממלא יותר את הפריים ומצמצם את הרקע הריק סביב המוצר.
+                </p>
+              </div>
+            )}
             {previewRow.imageUrl ? (
               <Button
-                onClick={() =>
-                  downloadFile(
-                    previewRow.imageUrl!,
-                    `${previewRow.modelNumber || previewRow.file.name}.png`
-                  )
-                }
+                onClick={async () => {
+                  const url = livePreviewUrl ?? previewRow.imageUrl!;
+                  downloadFile(url, `${previewRow.modelNumber || previewRow.file.name}.png`);
+                }}
                 className="w-full"
               >
                 הורדת התמונה

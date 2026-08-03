@@ -41,6 +41,8 @@ export interface Photo {
   sku: string | null;
   color: string | null;
   burned_text: boolean;
+  template_id: string | null;
+  zoom: number | null;
   created_at: string;
 }
 

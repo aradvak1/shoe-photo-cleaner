@@ -1,3 +1,5 @@
+import sharp from "sharp";
+
 const GEMINI_MODEL = "gemini-2.5-flash-image";
 const GEMINI_GENERATE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
@@ -7,9 +9,14 @@ const GEMINI_GENERATE_URL = `https://generativelanguage.googleapis.com/v1beta/mo
 // fine, but re-validate against a real photo first; output style shifts
 // between model versions.
 
-// 9:16 matches the fixed 1080x1920 the app has always used for saved photos
-// (see composite.ts) — keeps catalog/PDF layout assumptions unchanged.
-const OUTPUT_ASPECT_RATIO = "9:16";
+// Square output: matches catalog grid cells with no letterboxing, and
+// lets the fixed template's text block sit close to the product instead
+// of below a lot of empty backdrop. Gemini's aspectRatio param controls
+// ratio, not exact pixel size (it commonly returns ~1024x1024) — the
+// explicit resize below in callGeminiGenerate guarantees the exact
+// 1080x1080 the app saves and composites against everywhere else.
+const OUTPUT_ASPECT_RATIO = "1:1";
+const OUTPUT_SIZE = 1080;
 
 // Prepended to every prompt on both paths. The reference image is attached
 // as inline image data (the model can already see the product), but an
@@ -90,7 +97,8 @@ async function callGeminiGenerate(
     );
   }
 
-  return Buffer.from(imagePart.inlineData.data, "base64");
+  const rawImage = Buffer.from(imagePart.inlineData.data, "base64");
+  return sharp(rawImage).resize(OUTPUT_SIZE, OUTPUT_SIZE).png().toBuffer();
 }
 
 /**

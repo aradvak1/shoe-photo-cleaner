@@ -3,11 +3,12 @@ import sharp from "sharp";
 import type { PhotoTemplate, TemplateTextField } from "./photoTemplate";
 
 // Studio-mode photos are now always AI-composited by Gemini itself
-// (lib/gemini.ts's editWithBackgroundPrompt) at this fixed 1080x1920
-// size — these constants only remain as the metadata-fallback dimensions
-// burnProductText uses below when a saved image's own size can't be read.
+// (lib/gemini.ts's editWithBackgroundPrompt) at this fixed 1080x1080
+// square size — these constants only remain as the metadata-fallback
+// dimensions burnProductText uses below when a saved image's own size
+// can't be read.
 const CANVAS_WIDTH = Number(process.env.CANVAS_WIDTH ?? 1080);
-const CANVAS_HEIGHT = Number(process.env.CANVAS_HEIGHT ?? 1920);
+const CANVAS_HEIGHT = Number(process.env.CANVAS_HEIGHT ?? 1080);
 
 export interface OverlayTextFields {
   modelNumber?: string | null;
@@ -113,6 +114,50 @@ function cornerPosition(
     left: Math.max(0, Math.min(left, imageWidth - cardWidth)),
     top: Math.max(0, Math.min(top, imageHeight - cardHeight)),
   };
+}
+
+/**
+ * Scales the product within the frame without changing the canvas's own
+ * dimensions — the "product size in card" control from the reference
+ * tool. >100 scales the whole photo up then center-crops back to the
+ * original size (product fills more of the frame, background margin
+ * shrinks); <100 scales it down and pads back out, sampling a corner's
+ * color for the new margin so it blends with the existing background
+ * instead of showing a hard edge. A pure post-process on the already
+ * -generated photo — no extra AI call.
+ */
+export async function applyZoom(imageBuffer: Buffer, zoomPercent: number): Promise<Buffer> {
+  if (!zoomPercent || zoomPercent === 100) return imageBuffer;
+
+  const meta = await sharp(imageBuffer).metadata();
+  const width = meta.width ?? CANVAS_WIDTH;
+  const height = meta.height ?? CANVAS_HEIGHT;
+  const factor = zoomPercent / 100;
+  const scaledWidth = Math.max(1, Math.round(width * factor));
+  const scaledHeight = Math.max(1, Math.round(height * factor));
+  const scaled = await sharp(imageBuffer).resize(scaledWidth, scaledHeight).toBuffer();
+
+  if (factor >= 1) {
+    const left = Math.round((scaledWidth - width) / 2);
+    const top = Math.round((scaledHeight - height) / 2);
+    return sharp(scaled)
+      .extract({ left, top, width, height })
+      .png()
+      .toBuffer();
+  }
+
+  const cornerSize = Math.min(20, width, height);
+  const cornerStats = await sharp(imageBuffer)
+    .extract({ left: 0, top: 0, width: cornerSize, height: cornerSize })
+    .stats();
+  const [r, g, b] = cornerStats.channels;
+  const background = { r: Math.round(r.mean), g: Math.round(g.mean), b: Math.round(b.mean), alpha: 1 };
+  const left = Math.round((width - scaledWidth) / 2);
+  const top = Math.round((height - scaledHeight) / 2);
+  return sharp({ create: { width, height, channels: 3, background } })
+    .composite([{ input: scaled, left, top }])
+    .png()
+    .toBuffer();
 }
 
 /**

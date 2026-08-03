@@ -4,21 +4,18 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const BUCKET = "clean-images";
-
+/**
+ * Same rendering as apply-text-overlay (zoom + logo + fields, template or
+ * auto-placement) but never writes back to storage — used to show a live
+ * preview while the user drags the zoom slider or toggles fields, before
+ * they've committed to anything. Returns the composited PNG directly.
+ */
 export async function POST(request: Request) {
   const body = await request.json();
   const imageUrl = typeof body.image_url === "string" ? body.image_url : "";
   if (!imageUrl) {
     return Response.json({ error: "Missing image_url" }, { status: 400 });
   }
-
-  const marker = `/${BUCKET}/`;
-  const idx = imageUrl.indexOf(marker);
-  if (idx === -1) {
-    return Response.json({ error: "Unrecognized image_url" }, { status: 400 });
-  }
-  const path = imageUrl.slice(idx + marker.length);
 
   const imageRes = await fetch(imageUrl);
   if (!imageRes.ok) {
@@ -50,15 +47,7 @@ export async function POST(request: Request) {
 
   const templateId = typeof body.template_id === "string" ? body.template_id : null;
   const zoom = typeof body.zoom === "number" ? body.zoom : null;
-  const burned = await renderPhoto(imageBuffer, fields, logoUrl, templateId, zoom);
+  const rendered = await renderPhoto(imageBuffer, fields, logoUrl, templateId, zoom);
 
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(path, burned, { contentType: "image/png", upsert: true });
-  if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
-  }
-
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  return Response.json({ imageUrl: `${data.publicUrl}?v=${Date.now()}` });
+  return new Response(new Uint8Array(rendered), { headers: { "Content-Type": "image/png" } });
 }

@@ -25,6 +25,8 @@ export interface CreationRow {
   color: string;
   /** Text was already burned onto the image during processing (atmosphere's pick-fields-before-Start flow) — saveAll must not burn it a second time. */
   alreadyBurned?: boolean;
+  /** Product size within the frame, as a percent (100 = untouched). >100 crops tighter/fills more of the frame; <100 shows more background. */
+  zoom: number;
 }
 
 const CONCURRENCY = 3;
@@ -130,6 +132,7 @@ export function useImageCreationQueue({
         color: row.color || null,
         logo_id: row.logoId || null,
         template_id: templateId || null,
+        zoom: row.zoom,
       }),
     });
     const data = await res.json();
@@ -187,8 +190,10 @@ export function useImageCreationQueue({
     // Atmosphere's pick-fields-before-Start flow: the row's fields were
     // already chosen while it sat at status "pending", so bake them in
     // immediately — one click produces one finished image, no separate
-    // later save/burn step.
-    if (!autoProcess && hasBurnableFields(row)) {
+    // later save/burn step. Studio rows burn only at saveAll() time instead
+    // (see there), so fields/zoom stay editable — and live-previewable —
+    // after generation finishes, right up until save.
+    if (mode === "atmosphere" && hasBurnableFields(row)) {
       imageUrl = await burnRow({ ...row, imageUrl });
       alreadyBurned = true;
     }
@@ -304,6 +309,7 @@ export function useImageCreationQueue({
       sizeMin: defaults.sizeMin ?? "",
       sizeMax: defaults.sizeMax ?? "",
       color: defaults.color ?? "",
+      zoom: 100,
     }));
     setRows((prev) => [...prev, ...newRows]);
 
@@ -371,6 +377,8 @@ export function useImageCreationQueue({
             custom_prompt: customPrompt.trim() || null,
             mode,
             burned_text: burned,
+            template_id: burned ? templateId || null : null,
+            zoom: r.zoom,
           }))
         ),
       });

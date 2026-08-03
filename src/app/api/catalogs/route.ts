@@ -1,36 +1,14 @@
-import sharp from "sharp";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { generateCatalogPdf } from "@/lib/pdf/generateCatalogPdf";
 import { CATALOG_TEMPLATES } from "@/lib/pdf/templates";
-import type { CatalogCoverData, CatalogPhotoEntry } from "@/lib/pdf/templates/types";
-import type { CatalogStyleCategory, Logo, Photo } from "@/types";
+import { buildCatalogEntries, fetchAsBuffer } from "@/lib/pdf/buildCatalogEntries";
+import type { CatalogCoverData } from "@/lib/pdf/templates/types";
+import type { CatalogStyleCategory } from "@/types";
 
 const STYLE_CATEGORIES: CatalogStyleCategory[] = ["atmosphere", "studio_model", "product"];
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
-
-async function fetchAsBuffer(url: string | null): Promise<Buffer | null> {
-  if (!url) return null;
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return Buffer.from(await res.arrayBuffer());
-}
-
-// Product photos come out of the generation pipeline as large PNGs
-// (~1.5MB each). Embedded as-is, a multi-page catalog's PDF quickly blows
-// past Supabase Storage's 50MB project-wide upload limit — and is
-// unwieldy to send to a client either way. Re-encoding as JPEG cuts each
-// photo to ~40-60KB with no visible quality loss for a printed/shared
-// catalog. Not used for logos, which need their transparent background.
-async function compressPhotoForPdf(buffer: Buffer | null): Promise<Buffer | null> {
-  if (!buffer) return null;
-  try {
-    return await sharp(buffer).jpeg({ quality: 85 }).toBuffer();
-  } catch {
-    return buffer;
-  }
-}
 
 export async function GET() {
   const supabase = getSupabaseAdmin();
@@ -123,29 +101,6 @@ export async function POST(request: Request) {
     return Response.json({ error: linkError.message }, { status: 500 });
   }
 
-  const { data: photos, error: photosError } = await supabase
-    .from("photos")
-    .select("*")
-    .in("id", photoIds);
-  if (photosError || !photos) {
-    return Response.json(
-      { error: photosError?.message || "Failed to load photos" },
-      { status: 500 }
-    );
-  }
-  const photosById = new Map<string, Photo>(photos.map((p) => [p.id, p]));
-
-  const logoIds = [...new Set(photos.map((p) => p.logo_id).filter(Boolean))] as string[];
-  let logosById = new Map<string, Logo>();
-  if (logoIds.length > 0) {
-    const { data: logos } = await supabase.from("logos").select("*").in("id", logoIds);
-    logosById = new Map((logos ?? []).map((l) => [l.id, l]));
-  }
-
-  const orderedPhotos = photoIds
-    .map((id) => photosById.get(id))
-    .filter((p): p is Photo => Boolean(p));
-
   let cover: CatalogCoverData | undefined;
   if (hasCover) {
     let coverLogoUrl: string | null = null;
@@ -165,25 +120,15 @@ export async function POST(request: Request) {
     };
   }
 
-  const entries: CatalogPhotoEntry[] = await Promise.all(
-    orderedPhotos.map(async (photo) => {
-      const logo = photo.logo_id ? logosById.get(photo.logo_id) : null;
-      const [rawImageData, logoData] = await Promise.all([
-        fetchAsBuffer(photo.image_url),
-        fetchAsBuffer(logo?.image_url ?? null),
-      ]);
-      const imageData = await compressPhotoForPdf(rawImageData);
-      return {
-        imageData: imageData ?? Buffer.alloc(0),
-        logoData,
-        modelNumber: photo.model_number,
-        price: photo.price,
-        logoName: logo?.name ?? null,
-        sizeMin: photo.size_min,
-        sizeMax: photo.size_max,
-      };
-    })
-  );
+  let entries;
+  try {
+    entries = await buildCatalogEntries(supabase, photoIds);
+  } catch (e) {
+    return Response.json(
+      { error: e instanceof Error ? e.message : "Failed to load photos" },
+      { status: 500 }
+    );
+  }
 
   const pdfBuffer = await generateCatalogPdf(templateId, name, entries, cover);
 

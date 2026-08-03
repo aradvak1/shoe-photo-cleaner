@@ -17,6 +17,8 @@ interface PhotoInput {
   custom_prompt?: string | null;
   mode?: PhotoMode;
   burned_text?: boolean;
+  template_id?: string | null;
+  zoom?: number | null;
 }
 
 export async function GET(request: Request) {
@@ -75,6 +77,8 @@ export async function POST(request: Request) {
     custom_prompt: item.custom_prompt || null,
     mode: item.mode || "studio",
     burned_text: item.burned_text ?? false,
+    template_id: item.template_id || null,
+    zoom: item.zoom ?? null,
     status: "approved" as const,
   }));
 
