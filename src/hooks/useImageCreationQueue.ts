@@ -132,22 +132,47 @@ export function useImageCreationQueue({
     return data.imageUrl as string;
   }
 
+  // Retries only cover network-level failures (dropped connection, truncated
+  // response) — a real backend error (bad key, safety block, etc.) comes
+  // back as a clean {error} JSON body and fails on the first attempt, since
+  // retrying it would just waste time/money reproducing the same failure.
+  const GENERATE_MAX_ATTEMPTS = 3;
+
   async function generateRow(row: CreationRow, prompt: string): Promise<SampleGenerated> {
     const uploadFile = await resizeImageFile(row.file);
-    const formData = new FormData();
-    formData.append("image", uploadFile);
-    if (prompt.trim()) formData.append("prompt", prompt.trim());
-    const res = await fetch(endpoint, { method: "POST", body: formData });
-    let data: { imageUrl?: string; originalUrl?: string; error?: string };
-    try {
-      data = await res.json();
-    } catch {
-      // A truncated/empty body — almost always the server function's own
-      // timeout killing it mid-response, not a real "error" from our code.
-      throw new Error("התהליך נעצר באמצע (לרוב עומס רשת או זמן עיבוד ארוך מהצפוי). נסו שוב.");
+
+    for (let attempt = 1; attempt <= GENERATE_MAX_ATTEMPTS; attempt++) {
+      let res: Response;
+      try {
+        const formData = new FormData();
+        formData.append("image", uploadFile);
+        if (prompt.trim()) formData.append("prompt", prompt.trim());
+        res = await fetch(endpoint, { method: "POST", body: formData });
+      } catch {
+        if (attempt === GENERATE_MAX_ATTEMPTS) {
+          throw new Error("החיבור נכשל אחרי כמה ניסיונות (בעיית רשת). נסו שוב.");
+        }
+        await new Promise((r) => setTimeout(r, 1500 * attempt));
+        continue;
+      }
+
+      let data: { imageUrl?: string; originalUrl?: string; error?: string };
+      try {
+        data = await res.json();
+      } catch {
+        // Truncated/empty body — almost always a dropped connection or the
+        // server's own timeout, not a real error from our code.
+        if (attempt === GENERATE_MAX_ATTEMPTS) {
+          throw new Error("התהליך נעצר באמצע כמה פעמים ברציפות (לרוב עומס רשת). נסו שוב מאוחר יותר.");
+        }
+        await new Promise((r) => setTimeout(r, 1500 * attempt));
+        continue;
+      }
+
+      if (!res.ok) throw new Error(data.error || "עיבוד נכשל");
+      return { imageUrl: data.imageUrl as string, originalUrl: data.originalUrl as string };
     }
-    if (!res.ok) throw new Error(data.error || "עיבוד נכשל");
-    return { imageUrl: data.imageUrl as string, originalUrl: data.originalUrl as string };
+    throw new Error("שגיאה לא ידועה");
   }
 
   async function finalizeRow(row: CreationRow, generated: SampleGenerated) {

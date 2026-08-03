@@ -3,11 +3,13 @@ import { generateAtmosphereImage } from "@/lib/gemini";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-// Raised from 90s after production reports of the Gemini round-trip
-// occasionally outrunning it on real (non-dev) network/cold-start
-// conditions, which truncates the response mid-stream and surfaces to the
-// client as "Unexpected end of JSON input". Vercel Pro allows up to 300s.
-export const maxDuration = 150;
+// This project has Fluid Compute enabled (confirmed via the Vercel API —
+// "fluid": true on the project), which raises the real ceiling to 800s on
+// Pro. A generation call should never realistically approach 300s; this is
+// deliberately generous headroom so the function's own timeout is no
+// longer a plausible cause of the client seeing a truncated response
+// ("Unexpected end of JSON input").
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   const formData = await request.formData();
