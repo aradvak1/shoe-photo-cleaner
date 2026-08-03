@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { generateCatalogPdf } from "@/lib/pdf/generateCatalogPdf";
 import { CATALOG_TEMPLATES } from "@/lib/pdf/templates";
@@ -14,6 +15,21 @@ async function fetchAsBuffer(url: string | null): Promise<Buffer | null> {
   const res = await fetch(url);
   if (!res.ok) return null;
   return Buffer.from(await res.arrayBuffer());
+}
+
+// Product photos come out of the generation pipeline as large PNGs
+// (~1.5MB each). Embedded as-is, a multi-page catalog's PDF quickly blows
+// past Supabase Storage's 50MB project-wide upload limit — and is
+// unwieldy to send to a client either way. Re-encoding as JPEG cuts each
+// photo to ~40-60KB with no visible quality loss for a printed/shared
+// catalog. Not used for logos, which need their transparent background.
+async function compressPhotoForPdf(buffer: Buffer | null): Promise<Buffer | null> {
+  if (!buffer) return null;
+  try {
+    return await sharp(buffer).jpeg({ quality: 85 }).toBuffer();
+  } catch {
+    return buffer;
+  }
 }
 
 export async function GET() {
@@ -152,10 +168,11 @@ export async function POST(request: Request) {
   const entries: CatalogPhotoEntry[] = await Promise.all(
     orderedPhotos.map(async (photo) => {
       const logo = photo.logo_id ? logosById.get(photo.logo_id) : null;
-      const [imageData, logoData] = await Promise.all([
+      const [rawImageData, logoData] = await Promise.all([
         fetchAsBuffer(photo.image_url),
         fetchAsBuffer(logo?.image_url ?? null),
       ]);
+      const imageData = await compressPhotoForPdf(rawImageData);
       return {
         imageData: imageData ?? Buffer.alloc(0),
         logoData,
