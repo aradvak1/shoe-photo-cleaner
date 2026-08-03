@@ -73,6 +73,8 @@ export function CreationFlow({
     setCustomPrompt,
     burnText,
     setBurnText,
+    templateId,
+    setTemplateId,
     defaults,
     applyDefaults,
     defaultLogoId,
@@ -110,10 +112,12 @@ export function CreationFlow({
             currentPrompt={customPrompt}
             currentLogoId={defaultLogoId}
             currentBurnText={burnText}
+            currentTemplateId={templateId}
             currentDefaults={defaults}
             onApply={(preset) => {
               setCustomPrompt(preset.prompt ?? "");
               setBurnText(preset.burn_text);
+              setTemplateId(preset.template_id ?? "");
               applyDefaults({
                 logoId: preset.logo_id ?? "",
                 modelNumber: preset.model_number ?? "",

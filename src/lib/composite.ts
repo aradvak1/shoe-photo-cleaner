@@ -1,5 +1,6 @@
 import path from "node:path";
 import sharp from "sharp";
+import type { PhotoTemplate, TemplateTextField } from "./photoTemplate";
 
 // Studio-mode photos are now always AI-composited by Gemini itself
 // (lib/gemini.ts's editWithBackgroundPrompt) at this fixed 1080x1920
@@ -11,6 +12,7 @@ const CANVAS_HEIGHT = Number(process.env.CANVAS_HEIGHT ?? 1920);
 export interface OverlayTextFields {
   modelNumber?: string | null;
   sku?: string | null;
+  price?: number | null;
   sizeMin?: number | null;
   sizeMax?: number | null;
   color?: string | null;
@@ -252,5 +254,109 @@ export async function burnProductText(
     layers.push({ input: logoLayer.buffer, left: pos.left, top: pos.top });
   }
 
+  return sharp(imageBuffer).composite(layers).png().toBuffer();
+}
+
+/**
+ * Same job as burnProductText, but positions from a fixed PhotoTemplate
+ * instead of auto-picking a corner — every photo using the same template
+ * gets the logo and each text field in the exact same spot, matching a
+ * layout the user designed once (e.g. in Canva) rather than one the
+ * algorithm chose per photo. Legibility still comes from the same
+ * light/dark palette switch, sampled at each field's own fixed spot
+ * (a template built against a white mockup would otherwise go invisible
+ * on a dark photo).
+ */
+export async function burnProductTextFromTemplate(
+  imageBuffer: Buffer,
+  fields: OverlayTextFields,
+  logoUrl: string | null | undefined,
+  template: PhotoTemplate
+): Promise<Buffer> {
+  const meta = await sharp(imageBuffer).metadata();
+  const width = meta.width ?? CANVAS_WIDTH;
+  const height = meta.height ?? CANVAS_HEIGHT;
+
+  const layers: sharp.OverlayOptions[] = [];
+
+  if (logoUrl) {
+    try {
+      const logoRes = await fetch(logoUrl);
+      if (logoRes.ok) {
+        const logoBuffer = Buffer.from(await logoRes.arrayBuffer());
+        const boxWidth = Math.round(template.logo.widthFraction * width);
+        const boxHeight = Math.round(template.logo.heightFraction * height);
+        const resizedLogo = await sharp(logoBuffer)
+          .resize({ width: boxWidth, height: boxHeight, fit: "inside", withoutEnlargement: true })
+          .toBuffer();
+        const logoMeta = await sharp(resizedLogo).metadata();
+        const logoWidth = logoMeta.width ?? boxWidth;
+        const logoHeight = logoMeta.height ?? boxHeight;
+        const boxLeft = Math.round(template.logo.leftFraction * width);
+        const boxTop = Math.round(template.logo.topFraction * height);
+        layers.push({
+          input: resizedLogo,
+          // Centered within the template's box in case the logo's own
+          // aspect ratio doesn't exactly match the box's.
+          left: boxLeft + Math.round((boxWidth - logoWidth) / 2),
+          top: boxTop + Math.round((boxHeight - logoHeight) / 2),
+        });
+      }
+    } catch {
+      // A logo fetch failure shouldn't block the rest of the template.
+    }
+  }
+
+  async function sampleLuminanceAt(centerX: number, centerY: number, probeWidth: number, probeHeight: number) {
+    const left = Math.max(0, Math.min(width - probeWidth, Math.round(centerX - probeWidth / 2)));
+    const top = Math.max(0, Math.min(height - probeHeight, Math.round(centerY - probeHeight / 2)));
+    const safeWidth = Math.min(probeWidth, width - left);
+    const safeHeight = Math.min(probeHeight, height - top);
+    const stats = await sharp(imageBuffer)
+      .extract({ left, top, width: Math.max(1, safeWidth), height: Math.max(1, safeHeight) })
+      .stats();
+    const [r, g, b] = stats.channels;
+    return 0.299 * r.mean + 0.587 * g.mean + 0.114 * b.mean;
+  }
+
+  function paletteFor(luminance: number) {
+    return luminance >= LUMINANCE_THRESHOLD ? PALETTE_ON_LIGHT : PALETTE_ON_DARK;
+  }
+
+  async function placeField(field: TemplateTextField, value: string | null) {
+    if (!value) return;
+    const centerX = field.centerXFraction * width;
+    const centerY = field.centerYFraction * height;
+    const fontPt = Math.max(1, Math.round(field.fontSizeFraction * width));
+
+    const luminance = await sampleLuminanceAt(centerX, centerY, Math.round(width * 0.22), fontPt * 2);
+    const color = paletteFor(luminance).primary;
+
+    const buffer = await sharp({
+      text: {
+        text: `<span foreground="${color}" size="${fontPt * 1024}">${escapeXml(field.label + value)}</span>`,
+        font: "Frank Ruhl Libre",
+        fontfile: FRANK_RUHL_FONT_PATH,
+        align: "center",
+        rgba: true,
+      },
+    })
+      .png()
+      .toBuffer();
+    const textMeta = await sharp(buffer).metadata();
+    const textWidth = textMeta.width ?? 0;
+    const textHeight = textMeta.height ?? 0;
+    const left = Math.max(0, Math.min(width - textWidth, Math.round(centerX - textWidth / 2)));
+    const top = Math.max(0, Math.min(height - textHeight, Math.round(centerY - textHeight / 2)));
+    layers.push({ input: buffer, left, top });
+  }
+
+  await placeField(template.modelNumber, fields.modelNumber ?? null);
+  await placeField(template.price, fields.price != null ? String(fields.price) : null);
+  if (fields.sizeMin != null || fields.sizeMax != null) {
+    await placeField(template.sizes, `${fields.sizeMin ?? "?"}-${fields.sizeMax ?? "?"}`);
+  }
+
+  if (layers.length === 0) return imageBuffer;
   return sharp(imageBuffer).composite(layers).png().toBuffer();
 }

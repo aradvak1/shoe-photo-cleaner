@@ -20,6 +20,7 @@ export function PresetBar({
   currentPrompt,
   currentLogoId,
   currentBurnText,
+  currentTemplateId,
   currentDefaults,
   onApply,
 }: {
@@ -29,6 +30,7 @@ export function PresetBar({
   currentPrompt: string;
   currentLogoId: string;
   currentBurnText: boolean;
+  currentTemplateId: string;
   currentDefaults: Partial<RowMetadataValues>;
   onApply: (preset: Preset) => void;
 }) {
@@ -61,6 +63,7 @@ export function PresetBar({
           prompt: currentPrompt || null,
           logo_id: currentLogoId || null,
           burn_text: currentBurnText,
+          template_id: currentTemplateId || null,
           model_number: currentDefaults.modelNumber || null,
           sku: currentDefaults.sku || null,
           price: currentDefaults.price ? Number(currentDefaults.price) : null,

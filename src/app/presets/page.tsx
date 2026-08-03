@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Reveal } from "@/components/motion/Reveal";
 import { MetadataFieldPicker } from "@/components/create/PhotoMetadataFields";
 import type { RowMetadataValues } from "@/components/create/PhotoMetadataFields";
+import { PHOTO_TEMPLATES } from "@/lib/photoTemplate";
 import type { Preset, PhotoMode } from "@/types";
 
 const MODE_LABELS: Record<PhotoMode, string> = {
@@ -51,6 +52,10 @@ function summarizePreset(preset: Preset): string {
   if (preset.color) parts.push(preset.color);
   if (preset.logo_id) parts.push("לוגו");
   if (preset.burn_text) parts.push("צריבת טקסט");
+  if (preset.template_id) {
+    const template = PHOTO_TEMPLATES.find((t) => t.id === preset.template_id);
+    parts.push(template ? `תבנית: ${template.label}` : "תבנית קבועה");
+  }
   return parts.length > 0 ? parts.join(" · ") : "ללא פרטים נוספים";
 }
 
@@ -64,6 +69,7 @@ export default function PresetsPage() {
   const [mode, setMode] = useState<PhotoMode>("studio");
   const [prompt, setPrompt] = useState("");
   const [burnText, setBurnText] = useState(false);
+  const [templateId, setTemplateId] = useState("");
   const [fields, setFields] = useState<RowMetadataValues>(EMPTY_FIELDS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +89,7 @@ export default function PresetsPage() {
     setMode("studio");
     setPrompt("");
     setBurnText(false);
+    setTemplateId("");
     setFields(EMPTY_FIELDS);
     setError(null);
   }
@@ -98,6 +105,7 @@ export default function PresetsPage() {
     setMode(preset.mode);
     setPrompt(preset.prompt ?? "");
     setBurnText(preset.burn_text);
+    setTemplateId(preset.template_id ?? "");
     setFields(presetToFields(preset));
     setError(null);
     setOpen(true);
@@ -117,6 +125,7 @@ export default function PresetsPage() {
         prompt: prompt.trim() || null,
         logo_id: fields.logoId || null,
         burn_text: burnText,
+        template_id: templateId || null,
         model_number: fields.modelNumber || null,
         sku: fields.sku || null,
         price: fields.price ? Number(fields.price) : null,
@@ -270,6 +279,28 @@ export default function PresetsPage() {
             />
             צריבת הפרטים על התמונה
           </label>
+
+          {burnText && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted">מיקום הפרטים על התמונה</p>
+              <select
+                value={templateId}
+                onChange={(e) => setTemplateId(e.target.value)}
+                className="w-full rounded border border-border bg-card px-2 py-1.5 text-sm text-ink"
+              >
+                <option value="">אוטומטי (בוחר פינה פנויה בכל תמונה)</option>
+                {PHOTO_TEMPLATES.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-muted">
+                תבנית קבועה שמה את הלוגו ואת כל השדות באותו המיקום המדויק בכל תמונה, לפי עיצוב
+                שהוכן מראש.
+              </p>
+            </div>
+          )}
 
           {error && <p className="text-xs text-danger">{error}</p>}
           <Button onClick={handleSave} disabled={saving} className="w-full">

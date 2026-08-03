@@ -70,6 +70,7 @@ export function useImageCreationQueue({
   const [batchId] = useState(() => crypto.randomUUID());
   const [customPrompt, setCustomPrompt] = useState(initialPrompt);
   const [burnText, setBurnText] = useState(false);
+  const [templateId, setTemplateId] = useState("");
   const [defaults, setDefaultsState] = useState<Partial<RowMetadataValues>>({});
   const [started, setStarted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -121,10 +122,12 @@ export function useImageCreationQueue({
         image_url: row.imageUrl,
         modelNumber: row.modelNumber || null,
         sku: row.sku || null,
+        price: row.price ? Number(row.price) : null,
         sizeMin: row.sizeMin ? Number(row.sizeMin) : null,
         sizeMax: row.sizeMax ? Number(row.sizeMax) : null,
         color: row.color || null,
         logo_id: row.logoId || null,
+        template_id: templateId || null,
       }),
     });
     const data = await res.json();
@@ -394,6 +397,8 @@ export function useImageCreationQueue({
     setCustomPrompt,
     burnText,
     setBurnText,
+    templateId,
+    setTemplateId,
     defaults,
     applyDefaults,
     defaultLogoId: defaults.logoId ?? "",

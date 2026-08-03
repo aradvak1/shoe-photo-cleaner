@@ -1,4 +1,5 @@
-import { burnProductText } from "@/lib/composite";
+import { burnProductText, burnProductTextFromTemplate } from "@/lib/composite";
+import { findTemplate } from "@/lib/photoTemplate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -39,17 +40,19 @@ export async function POST(request: Request) {
     logoUrl = logo?.image_url ?? null;
   }
 
-  const burned = await burnProductText(
-    imageBuffer,
-    {
-      modelNumber: body.modelNumber ?? null,
-      sku: body.sku ?? null,
-      sizeMin: body.sizeMin ?? null,
-      sizeMax: body.sizeMax ?? null,
-      color: body.color ?? null,
-    },
-    logoUrl
-  );
+  const fields = {
+    modelNumber: body.modelNumber ?? null,
+    sku: body.sku ?? null,
+    price: body.price ?? null,
+    sizeMin: body.sizeMin ?? null,
+    sizeMax: body.sizeMax ?? null,
+    color: body.color ?? null,
+  };
+
+  const template = findTemplate(typeof body.template_id === "string" ? body.template_id : null);
+  const burned = template
+    ? await burnProductTextFromTemplate(imageBuffer, fields, logoUrl, template)
+    : await burnProductText(imageBuffer, fields, logoUrl);
 
   const { error } = await supabase.storage
     .from(BUCKET)
