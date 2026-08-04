@@ -47,7 +47,8 @@ export async function POST(request: Request) {
 
   const templateId = typeof body.template_id === "string" ? body.template_id : null;
   const zoom = typeof body.zoom === "number" ? body.zoom : null;
-  const rendered = await renderPhoto(imageBuffer, fields, logoUrl, templateId, zoom);
+  const customLayout = body.custom_layout ?? null;
+  const rendered = await renderPhoto(imageBuffer, fields, logoUrl, templateId, zoom, customLayout);
 
   return new Response(new Uint8Array(rendered), { headers: { "Content-Type": "image/png" } });
 }

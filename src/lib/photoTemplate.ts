@@ -81,3 +81,28 @@ export function findTemplate(id: string | null | undefined): PhotoTemplate | nul
   if (!id) return null;
   return PHOTO_TEMPLATES.find((t) => t.id === id) ?? null;
 }
+
+/** Per-photo drag-positioned/resized overrides for the logo and/or each
+ * text field, layered on top of a template's (or the generic default's)
+ * fractions — the design toolbar's "move/resize" feature. Text fields omit
+ * `label`: the prefix text (e.g. "דגם : ") always comes from the base
+ * layout, only position/size are ever user-dragged. */
+export interface CustomLayout {
+  logo?: TemplateLogoField;
+  modelNumber?: Partial<Omit<TemplateTextField, "label">>;
+  price?: Partial<Omit<TemplateTextField, "label">>;
+  sizes?: Partial<Omit<TemplateTextField, "label">>;
+}
+
+export function mergeLayout(base: PhotoTemplate, overrides?: CustomLayout | null): PhotoTemplate {
+  if (!overrides) return base;
+  return {
+    ...base,
+    logo: overrides.logo ? { ...base.logo, ...overrides.logo } : base.logo,
+    modelNumber: overrides.modelNumber
+      ? { ...base.modelNumber, ...overrides.modelNumber }
+      : base.modelNumber,
+    price: overrides.price ? { ...base.price, ...overrides.price } : base.price,
+    sizes: overrides.sizes ? { ...base.sizes, ...overrides.sizes } : base.sizes,
+  };
+}

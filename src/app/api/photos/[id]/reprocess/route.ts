@@ -59,6 +59,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const sizeMax = body.size_max !== undefined ? body.size_max : photo.size_max;
   const color = body.color !== undefined ? body.color : photo.color;
   const logoId: string | null = body.logo_id !== undefined ? body.logo_id : photo.logo_id;
+  const customLayout = body.custom_layout !== undefined ? body.custom_layout : photo.custom_layout;
 
   let logoUrl: string | null = null;
   if (logoId) {
@@ -75,7 +76,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     { modelNumber, sku, price, sizeMin, sizeMax, color },
     logoUrl,
     templateId,
-    zoom
+    zoom,
+    customLayout
   );
 
   const marker = "/clean-images/";
@@ -104,6 +106,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       logo_id: logoId || null,
       template_id: templateId || null,
       zoom: zoom ?? null,
+      custom_layout: customLayout ?? null,
       burned_text: true,
     })
     .eq("id", id)

@@ -1,3 +1,5 @@
+import type { CustomLayout } from "@/lib/photoTemplate";
+
 export type PhotoStatus = "pending" | "processed" | "approved";
 export type PhotoMode = "studio" | "atmosphere";
 
@@ -43,6 +45,7 @@ export interface Photo {
   burned_text: boolean;
   template_id: string | null;
   zoom: number | null;
+  custom_layout: CustomLayout | null;
   created_at: string;
 }
 

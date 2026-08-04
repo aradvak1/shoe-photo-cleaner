@@ -13,7 +13,15 @@ import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { useImageCreationQueue } from "@/hooks/useImageCreationQueue";
 import { downloadFile } from "@/lib/downloadFile";
-import { PHOTO_TEMPLATES } from "@/lib/photoTemplate";
+import { findTemplate, mergeLayout, PHOTO_TEMPLATES } from "@/lib/photoTemplate";
+import type { PhotoTemplate } from "@/lib/photoTemplate";
+
+// The only template defined today — used as the generic starting layout
+// when dragging/resizing without an explicit template selected (dragging
+// needs *some* fixed base to nudge from). See renderPhoto.ts, which
+// falls back to the same template server-side for the actual burn.
+const GENERIC_BASE_TEMPLATE_ID = "grazia-donna";
+type DraggableField = "logo" | "modelNumber" | "price" | "sizes";
 
 /**
  * The studio creation screen, redesigned per user request around a single
@@ -69,6 +77,106 @@ export function StudioDesignFlow() {
   const [designPreviewLoading, setDesignPreviewLoading] = useState(false);
   const designPreviewBlobRef = useRef<string | null>(null);
 
+  const baseTemplate: PhotoTemplate =
+    findTemplate(templateId) ?? findTemplate(GENERIC_BASE_TEMPLATE_ID)!;
+  const effectiveLayout: PhotoTemplate = mergeLayout(baseTemplate, designRow?.customLayout);
+
+  // Drag-to-move + slide-to-resize for the logo box and each active text
+  // field's position, directly on the live preview — the toolbar's last
+  // missing control per the user's request. Position is dragged on the
+  // image itself; size is a slider (a corner-resize handle would need the
+  // same pixel-to-fraction math twice, and gains little over a slider for
+  // fine-tuning a single number).
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  // Listeners are attached imperatively, right inside the same pointerdown
+  // handler that starts the drag — not via a useEffect keyed on state. An
+  // effect-based attach/detach cycle is one render behind the state change
+  // that triggers it, and in dev StrictMode's double-invoke that window can
+  // occasionally leave two listeners attached at once; attaching directly
+  // here removes that whole class of timing issue.
+  function beginDrag(field: DraggableField, e: React.PointerEvent) {
+    if (!imgRef.current || !designRow) return;
+    e.preventDefault();
+    const rect = imgRef.current.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const rectWidth = rect.width;
+    const rectHeight = rect.height;
+    const base = effectiveLayout[field];
+    const rowId = designRow.id;
+    const rowCustomLayout = designRow.customLayout;
+
+    function clamp(value: number, min: number, max: number) {
+      return Math.min(max, Math.max(min, value));
+    }
+    function onMove(ev: PointerEvent) {
+      const dxFrac = (ev.clientX - startX) / rectWidth;
+      const dyFrac = (ev.clientY - startY) / rectHeight;
+      if (field === "logo") {
+        const logoBase = base as PhotoTemplate["logo"];
+        const logo = {
+          ...logoBase,
+          leftFraction: clamp(logoBase.leftFraction + dxFrac, 0, 1 - logoBase.widthFraction),
+          topFraction: clamp(logoBase.topFraction + dyFrac, 0, 1 - logoBase.heightFraction),
+        };
+        updateRow(rowId, { customLayout: { ...rowCustomLayout, logo } });
+      } else {
+        const fieldBase = base as PhotoTemplate["modelNumber"];
+        const updated = {
+          ...fieldBase,
+          centerXFraction: clamp(fieldBase.centerXFraction + dxFrac, 0, 1),
+          centerYFraction: clamp(fieldBase.centerYFraction + dyFrac, 0, 1),
+        };
+        updateRow(rowId, { customLayout: { ...rowCustomLayout, [field]: updated } });
+      }
+    }
+    function onUp() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  function setLogoScale(scalePercent: number) {
+    if (!designRow) return;
+    const factor = scalePercent / 100;
+    const newWidth = baseTemplate.logo.widthFraction * factor;
+    const newHeight = baseTemplate.logo.heightFraction * factor;
+    const centerX = effectiveLayout.logo.leftFraction + effectiveLayout.logo.widthFraction / 2;
+    const centerY = effectiveLayout.logo.topFraction + effectiveLayout.logo.heightFraction / 2;
+    updateRow(designRow.id, {
+      customLayout: {
+        ...designRow.customLayout,
+        logo: {
+          leftFraction: centerX - newWidth / 2,
+          topFraction: centerY - newHeight / 2,
+          widthFraction: newWidth,
+          heightFraction: newHeight,
+        },
+      },
+    });
+  }
+
+  function setFieldScale(field: Exclude<DraggableField, "logo">, scalePercent: number) {
+    if (!designRow) return;
+    const factor = scalePercent / 100;
+    const base = baseTemplate[field];
+    updateRow(designRow.id, {
+      customLayout: {
+        ...designRow.customLayout,
+        [field]: { ...effectiveLayout[field], fontSizeFraction: base.fontSizeFraction * factor },
+      },
+    });
+  }
+
+  const FIELD_LABELS: Record<Exclude<DraggableField, "logo">, string> = {
+    modelNumber: "דגם",
+    price: "מחיר",
+    sizes: "מידות",
+  };
+
   // Live-renders the design row exactly as it'll be sent for approval —
   // template/logo/fields burned on top of the RAW photo, plus the zoom
   // crop — so you see (an approximation of) the final layout before
@@ -97,6 +205,7 @@ export function StudioDesignFlow() {
             logo_id: row.logoId || null,
             template_id: templateId || null,
             zoom: row.zoom,
+            custom_layout: row.customLayout,
           }),
         });
         if (!res.ok || cancelled) return;
@@ -126,6 +235,7 @@ export function StudioDesignFlow() {
     designRow?.color,
     designRow?.logoId,
     designRow?.zoom,
+    designRow?.customLayout,
     templateId,
     sampleDialogOpen,
   ]);
@@ -199,12 +309,14 @@ export function StudioDesignFlow() {
       {designRow && (
         <Card>
           <CardBody className="grid gap-6 md:grid-cols-2">
-            <div className="relative">
+            <div className="relative select-none">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
+                ref={imgRef}
                 src={designPreviewUrl ?? designRow.rawUrl ?? designRow.originalPreviewUrl}
                 alt={designRow.file.name}
                 className="w-full rounded-sm border border-border bg-white object-contain"
+                draggable={false}
               />
               {designPreviewLoading && (
                 <div className="absolute inset-x-0 bottom-0 bg-ink/60 py-1 text-center text-xs text-white">
@@ -216,13 +328,63 @@ export function StudioDesignFlow() {
                   מעלה תמונה…
                 </div>
               )}
+              {designRow.rawUrl && (
+                <>
+                  {/* Drag the logo box to reposition it — size is controlled by the slider below, not a resize handle, to keep the drag math to one axis of interaction. */}
+                  {designRow.logoId && (
+                    <div
+                      onPointerDown={(e) => beginDrag("logo", e)}
+                      title="גררו כדי להזיז את הלוגו"
+                      className="absolute cursor-move rounded-sm border-2 border-dashed border-accent/80 bg-accent/10 hover:bg-accent/20"
+                      style={{
+                        left: `${effectiveLayout.logo.leftFraction * 100}%`,
+                        top: `${effectiveLayout.logo.topFraction * 100}%`,
+                        width: `${effectiveLayout.logo.widthFraction * 100}%`,
+                        height: `${effectiveLayout.logo.heightFraction * 100}%`,
+                      }}
+                    >
+                      <span className="absolute -top-5 right-0 rounded-sm bg-accent px-1.5 py-0.5 text-[10px] text-[#1c1108]">
+                        לוגו
+                      </span>
+                    </div>
+                  )}
+                  {(["modelNumber", "price", "sizes"] as const)
+                    .filter((field) =>
+                      field === "modelNumber"
+                        ? designRow.modelNumber
+                        : field === "price"
+                          ? designRow.price
+                          : designRow.sizeMin || designRow.sizeMax
+                    )
+                    .map((field) => (
+                      <div
+                        key={field}
+                        onPointerDown={(e) => beginDrag(field, e)}
+                        title="גררו כדי להזיז"
+                        className="absolute -translate-x-1/2 -translate-y-1/2 cursor-move rounded-full border border-accent bg-ink/80 px-2 py-0.5 text-[10px] whitespace-nowrap text-white hover:bg-ink"
+                        style={{
+                          left: `${effectiveLayout[field].centerXFraction * 100}%`,
+                          top: `${effectiveLayout[field].centerYFraction * 100}%`,
+                        }}
+                      >
+                        {FIELD_LABELS[field]}
+                      </div>
+                    ))}
+                </>
+              )}
             </div>
 
             <div className="space-y-4">
               <Select
                 label="תבנית תמונה"
                 value={templateId}
-                onChange={(e) => setTemplateId(e.target.value)}
+                onChange={(e) => {
+                  setTemplateId(e.target.value);
+                  // A different template has different base positions —
+                  // dragged overrides from the previous one would land in
+                  // the wrong spot, so start fresh.
+                  if (designRow) updateRow(designRow.id, { customLayout: {} });
+                }}
               >
                 <option value="">ללא תבנית (מיקום אוטומטי לפי התמונה)</option>
                 {PHOTO_TEMPLATES.map((t) => (
@@ -259,6 +421,27 @@ export function StudioDesignFlow() {
                   onChange={setDefaultLogoId}
                   onLogoAdded={(logo) => setLogos((prev) => [...prev, logo])}
                 />
+                {designRow.logoId && (
+                  <div className="mt-2">
+                    <div className="mb-1 flex items-center justify-between text-[10px] text-muted">
+                      <span>גודל הלוגו</span>
+                      <span>
+                        {Math.round((effectiveLayout.logo.widthFraction / baseTemplate.logo.widthFraction) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={40}
+                      max={200}
+                      step={5}
+                      value={Math.round(
+                        (effectiveLayout.logo.widthFraction / baseTemplate.logo.widthFraction) * 100
+                      )}
+                      onChange={(e) => setLogoScale(Number(e.target.value))}
+                      className="w-full accent-accent"
+                    />
+                  </div>
+                )}
               </div>
 
               <div>
@@ -270,6 +453,43 @@ export function StudioDesignFlow() {
                   onLogoAdded={(logo) => setLogos((prev) => [...prev, logo])}
                   burnsPrice={Boolean(templateId)}
                 />
+                <p className="mt-2 text-[10px] text-muted">
+                  ניתן לגרור את הלוגו ואת התוויות (דגם/מחיר/מידות) ישירות על התמונה כדי להזיז אותם.
+                </p>
+                <div className="mt-2 space-y-2">
+                  {(["modelNumber", "price", "sizes"] as const)
+                    .filter((field) =>
+                      field === "modelNumber"
+                        ? designRow.modelNumber
+                        : field === "price"
+                          ? designRow.price
+                          : designRow.sizeMin || designRow.sizeMax
+                    )
+                    .map((field) => (
+                      <div key={field}>
+                        <div className="mb-1 flex items-center justify-between text-[10px] text-muted">
+                          <span>גודל {FIELD_LABELS[field]}</span>
+                          <span>
+                            {Math.round(
+                              (effectiveLayout[field].fontSizeFraction / baseTemplate[field].fontSizeFraction) * 100
+                            )}
+                            %
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={50}
+                          max={200}
+                          step={5}
+                          value={Math.round(
+                            (effectiveLayout[field].fontSizeFraction / baseTemplate[field].fontSizeFraction) * 100
+                          )}
+                          onChange={(e) => setFieldScale(field, Number(e.target.value))}
+                          className="w-full accent-accent"
+                        />
+                      </div>
+                    ))}
+                </div>
               </div>
 
               <Textarea

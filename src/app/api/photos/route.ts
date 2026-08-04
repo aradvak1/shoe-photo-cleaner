@@ -19,6 +19,7 @@ interface PhotoInput {
   burned_text?: boolean;
   template_id?: string | null;
   zoom?: number | null;
+  custom_layout?: object | null;
 }
 
 export async function GET(request: Request) {
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
     burned_text: item.burned_text ?? false,
     template_id: item.template_id || null,
     zoom: item.zoom ?? null,
+    custom_layout: item.custom_layout ?? null,
     status: "approved" as const,
   }));
 

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { PhotoMode } from "@/types";
 import type { RowMetadataValues } from "@/components/create/PhotoMetadataFields";
 import { resizeImageFile } from "@/lib/resizeImage";
+import type { CustomLayout } from "@/lib/photoTemplate";
 
 export type RowStatus = "pending" | "processing" | "done" | "error";
 
@@ -29,6 +30,8 @@ export interface CreationRow {
   alreadyBurned?: boolean;
   /** Product size within the frame, as a percent (100 = untouched). >100 crops tighter/fills more of the frame; <100 shows more background. */
   zoom: number;
+  /** Drag-positioned/resized overrides for the logo and/or text fields, from the design toolbar — merged on top of the base template's fractions. */
+  customLayout: CustomLayout;
 }
 
 const CONCURRENCY = 3;
@@ -135,6 +138,7 @@ export function useImageCreationQueue({
         logo_id: row.logoId || null,
         template_id: templateId || null,
         zoom: row.zoom,
+        custom_layout: row.customLayout,
       }),
     });
     const data = await res.json();
@@ -310,6 +314,7 @@ export function useImageCreationQueue({
       sizeMax: defaults.sizeMax ?? "",
       color: defaults.color ?? "",
       zoom: 100,
+      customLayout: {},
     }));
     setRows((prev) => [...prev, ...newRows]);
 
@@ -395,6 +400,7 @@ export function useImageCreationQueue({
             burned_text: burned,
             template_id: burned ? templateId || null : null,
             zoom: r.zoom,
+            custom_layout: burned ? r.customLayout : null,
           }))
         ),
       });
