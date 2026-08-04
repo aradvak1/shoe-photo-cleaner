@@ -13,6 +13,8 @@ export interface CreationRow {
   status: RowStatus;
   /** Client-side object URL of the raw uploaded file — shown as the row's thumbnail before/while processing, so a batch of many "ממתין" rows is still visually identifiable (which shoe/color is which) before any AI result exists. */
   originalPreviewUrl: string;
+  /** Server-fetchable URL of the same raw file (uploaded immediately on add) — a blob: URL only exists in this tab's memory, so the design toolbar's live preview-overlay calls need this instead to render zoom/logo/field previews before AI processing has even run. Undefined until the upload finishes. */
+  rawUrl?: string;
   imageUrl?: string;
   originalUrl?: string;
   error?: string;
@@ -187,13 +189,11 @@ export function useImageCreationQueue({
     let imageUrl = generated.imageUrl;
     let alreadyBurned = false;
 
-    // Atmosphere's pick-fields-before-Start flow: the row's fields were
-    // already chosen while it sat at status "pending", so bake them in
-    // immediately — one click produces one finished image, no separate
-    // later save/burn step. Studio rows burn only at saveAll() time instead
-    // (see there), so fields/zoom stay editable — and live-previewable —
-    // after generation finishes, right up until save.
-    if (mode === "atmosphere" && hasBurnableFields(row)) {
+    // Fields (and now zoom/template, via the design toolbar) are chosen
+    // before generation even starts, in both modes — so bake them in
+    // immediately once the AI result comes back: one "אישור" click produces
+    // one finished image, no separate later save/burn step.
+    if (hasBurnableFields(row)) {
       imageUrl = await burnRow({ ...row, imageUrl });
       alreadyBurned = true;
     }
@@ -312,6 +312,22 @@ export function useImageCreationQueue({
       zoom: 100,
     }));
     setRows((prev) => [...prev, ...newRows]);
+
+    // Fire-and-forget: uploads each raw file immediately so the design
+    // toolbar has a real URL to preview zoom/logo/fields against before AI
+    // processing even starts. A failure here just means that row's live
+    // preview stays unavailable — the AI generation step re-uploads the
+    // file itself regardless, so this never blocks actual processing.
+    for (const row of newRows) {
+      const formData = new FormData();
+      formData.append("image", row.file);
+      fetch("/api/upload-original", { method: "POST", body: formData })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.url) updateRow(row.id, { rawUrl: data.url });
+        })
+        .catch(() => {});
+    }
 
     if (!autoProcess) return;
 

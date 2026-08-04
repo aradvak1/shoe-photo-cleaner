@@ -1,0 +1,440 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Dropzone } from "@/components/Dropzone";
+import { LogoSelect, useLogos } from "@/components/LogoSelect";
+import { MetadataFieldPicker } from "@/components/create/PhotoMetadataFields";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card, CardBody } from "@/components/ui/Card";
+import { Dialog } from "@/components/ui/Dialog";
+import { ProgressBar } from "@/components/ui/ProgressBar";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { useImageCreationQueue } from "@/hooks/useImageCreationQueue";
+import { downloadFile } from "@/lib/downloadFile";
+import { PHOTO_TEMPLATES } from "@/lib/photoTemplate";
+
+/**
+ * The studio creation screen, redesigned per user request around a single
+ * "design toolbar" (modeled on a reference product-card tool they shared):
+ * you lay out everything — template, product size/zoom, logo, fields — on
+ * the raw uploaded photo BEFORE it ever goes to the AI, with a live
+ * preview the whole time. One "אישור ועיבוד" click then runs the AI
+ * generation and burns your exact design in a single step, reusing the
+ * existing sample-approval flow so the rest of a batch only spends AI
+ * credits once you've confirmed the resulting photographic style.
+ */
+export function StudioDesignFlow() {
+  const { logos, setLogos } = useLogos();
+  const {
+    rows,
+    updateRow,
+    addFiles,
+    saveAll,
+    saving,
+    saveMessage,
+    batchId,
+    total,
+    doneCount,
+    readyCount,
+    customPrompt,
+    setCustomPrompt,
+    templateId,
+    setTemplateId,
+    applyDefaults,
+    defaultLogoId,
+    setDefaultLogoId,
+    startProcessing,
+    sample,
+    approveSample,
+    rejectSample,
+    retryRow,
+  } = useImageCreationQueue({ endpoint: "/api/process-image", mode: "studio", autoProcess: false });
+
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [errorRow, setErrorRow] = useState<string | null>(null);
+
+  // The one row currently being designed — always the first not-yet-sent
+  // photo. Once the batch's sample is approved, the rest process
+  // automatically with these same settings (see hook's startProcessing),
+  // so there's never a second design step to show mid-batch.
+  const designRow = rows.find((r) => r.status === "pending") ?? null;
+  const sampleDialogOpen = sample.phase === "generating" || sample.phase === "awaiting-approval";
+
+  const [designPreviewUrl, setDesignPreviewUrl] = useState<string | null>(null);
+  const [designPreviewLoading, setDesignPreviewLoading] = useState(false);
+  const designPreviewBlobRef = useRef<string | null>(null);
+
+  // Live-renders the design row exactly as it'll be sent for approval —
+  // template/logo/fields burned on top of the RAW photo, plus the zoom
+  // crop — so you see (an approximation of) the final layout before
+  // spending anything on AI generation. Approximate because the AI will
+  // still swap the background; the product's own size/position stays the
+  // same since generation is instructed to preserve it exactly.
+  useEffect(() => {
+    if (!designRow || !designRow.rawUrl || sampleDialogOpen) return;
+    const row = designRow;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      setDesignPreviewLoading(true);
+      try {
+        const res = await fetch("/api/preview-overlay", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image_url: row.rawUrl,
+            modelNumber: row.modelNumber || null,
+            sku: row.sku || null,
+            price: row.price ? Number(row.price) : null,
+            sizeMin: row.sizeMin ? Number(row.sizeMin) : null,
+            sizeMax: row.sizeMax ? Number(row.sizeMax) : null,
+            color: row.color || null,
+            logo_id: row.logoId || null,
+            template_id: templateId || null,
+            zoom: row.zoom,
+          }),
+        });
+        if (!res.ok || cancelled) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        if (designPreviewBlobRef.current) URL.revokeObjectURL(designPreviewBlobRef.current);
+        designPreviewBlobRef.current = url;
+        setDesignPreviewUrl(url);
+      } finally {
+        if (!cancelled) setDesignPreviewLoading(false);
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    designRow?.id,
+    designRow?.rawUrl,
+    designRow?.modelNumber,
+    designRow?.sku,
+    designRow?.price,
+    designRow?.sizeMin,
+    designRow?.sizeMax,
+    designRow?.color,
+    designRow?.logoId,
+    designRow?.zoom,
+    templateId,
+    sampleDialogOpen,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (designPreviewBlobRef.current) URL.revokeObjectURL(designPreviewBlobRef.current);
+    };
+  }, []);
+
+  const isProcessing = total > 0 && doneCount < total;
+  const errorCount = rows.filter((r) => r.status === "error").length;
+  const processedRows = rows.filter((r) => r.status !== "pending");
+  const errorRowData = rows.find((r) => r.id === errorRow) ?? null;
+
+  // Any field/logo/zoom change on the design row also seeds the shared
+  // defaults, so every other photo in this batch — including ones added
+  // later — inherits the exact same design without redoing it per photo.
+  function handleFieldChange(patch: Record<string, string>) {
+    if (!designRow) return;
+    updateRow(designRow.id, patch);
+    applyDefaults(patch);
+  }
+
+  function handleZoomChange(zoom: number) {
+    if (!designRow) return;
+    rows.filter((r) => r.status === "pending").forEach((r) => updateRow(r.id, { zoom }));
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const res = await fetch(`/api/export?batch_id=${batchId}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(
+          data.error === "No photos found for export"
+            ? 'עוד לא שמרתם תמונות מהאצווה הזו — לחצו קודם על "שמירה" למעלה, ורק אז על ייצוא.'
+            : data.error || "הייצוא נכשל"
+        );
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "catalog-export.zip";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "הייצוא נכשל");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold">תמונת סטודיו</h1>
+        <p className="mt-1 text-sm text-muted">
+          עצבו את התמונה בדיוק כמו שאתם רוצים — תבנית, גודל המוצר, לוגו ופרטים — ורק אז אשרו. האישור
+          מריץ את ה-AI וצורב את הכל בבת אחת.
+        </p>
+      </div>
+
+      <Dropzone multiple label="גררו תמונות נעליים לניקוי" onFiles={addFiles} />
+
+      {designRow && (
+        <Card>
+          <CardBody className="grid gap-6 md:grid-cols-2">
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={designPreviewUrl ?? designRow.rawUrl ?? designRow.originalPreviewUrl}
+                alt={designRow.file.name}
+                className="w-full rounded-sm border border-border bg-white object-contain"
+              />
+              {designPreviewLoading && (
+                <div className="absolute inset-x-0 bottom-0 bg-ink/60 py-1 text-center text-xs text-white">
+                  מעדכן תצוגה מקדימה…
+                </div>
+              )}
+              {!designRow.rawUrl && (
+                <div className="absolute inset-x-0 bottom-0 bg-ink/60 py-1 text-center text-xs text-white">
+                  מעלה תמונה…
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <Select
+                label="תבנית תמונה"
+                value={templateId}
+                onChange={(e) => setTemplateId(e.target.value)}
+              >
+                <option value="">ללא תבנית (מיקום אוטומטי לפי התמונה)</option>
+                {PHOTO_TEMPLATES.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </Select>
+
+              <div>
+                <div className="mb-1 flex items-center justify-between text-xs text-muted">
+                  <span>גודל המוצר בתוך התמונה</span>
+                  <span>{designRow.zoom}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={70}
+                  max={160}
+                  step={5}
+                  value={designRow.zoom}
+                  onChange={(e) => handleZoomChange(Number(e.target.value))}
+                  className="w-full accent-accent"
+                />
+                <p className="mt-1 text-[10px] text-muted">
+                  ערך גבוה יותר ממלא יותר את הפריים ומצמצם את הרקע הריק סביב המוצר.
+                </p>
+              </div>
+
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted">לוגו</p>
+                <LogoSelect
+                  logos={logos}
+                  value={designRow.logoId || defaultLogoId}
+                  onChange={setDefaultLogoId}
+                  onLogoAdded={(logo) => setLogos((prev) => [...prev, logo])}
+                />
+              </div>
+
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted">פרטים על התמונה</p>
+                <MetadataFieldPicker
+                  values={designRow}
+                  onChange={handleFieldChange}
+                  logos={logos}
+                  onLogoAdded={(logo) => setLogos((prev) => [...prev, logo])}
+                  burnsPrice={Boolean(templateId)}
+                />
+              </div>
+
+              <Textarea
+                label="כיוון ל-AI (לא חובה)"
+                caption="אם משאירים ריק, נשתמש בברירת המחדל."
+                placeholder='לדוגמה: "רקע בז׳ חמים במקום לבן אחיד"'
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                rows={2}
+              />
+
+              <Button onClick={startProcessing} disabled={!designRow.rawUrl} className="w-full">
+                אישור ועיבוד
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {total > 0 && (
+        <div className="space-y-1">
+          <ProgressBar
+            value={doneCount}
+            max={total}
+            label={`${doneCount} מתוך ${total} עובדו${isProcessing ? "…" : ""}`}
+          />
+          <p className="text-xs text-muted">
+            {readyCount} מוכנות להורדה
+            {errorCount > 0 && <span className="text-danger"> · {errorCount} נכשלו</span>}
+          </p>
+        </div>
+      )}
+
+      {processedRows.length > 0 && (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+          {processedRows.map((row) => (
+            <Card key={row.id}>
+              <CardBody className="space-y-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={row.imageUrl ?? row.originalPreviewUrl}
+                  alt={row.file.name}
+                  className="aspect-square w-full rounded-sm border border-border bg-white object-contain"
+                />
+                {row.status === "processing" && <Badge tone="pending">מעבד…</Badge>}
+                {row.status === "done" && (
+                  <div className="flex items-center gap-2">
+                    <Badge tone="success">מוכן</Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="px-1.5 py-0.5 text-xs"
+                      onClick={() =>
+                        row.imageUrl &&
+                        downloadFile(row.imageUrl, `${row.modelNumber || row.file.name}.png`)
+                      }
+                    >
+                      הורדה
+                    </Button>
+                  </div>
+                )}
+                {row.status === "error" && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Badge tone="danger" className="cursor-pointer" onClick={() => setErrorRow(row.id)}>
+                        שגיאה
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="px-1.5 py-0.5 text-xs"
+                        onClick={() => retryRow(row.id)}
+                      >
+                        ניסיון חוזר
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {readyCount > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={saveAll} disabled={saving}>
+            {saving ? "שומר…" : `שמירת ${readyCount} פריטים`}
+          </Button>
+          {saveMessage && <p className="text-sm text-muted">{saveMessage}</p>}
+          <Button variant="secondary" onClick={handleExport} disabled={exporting}>
+            {exporting ? "מייצא…" : "ייצוא ZIP + CSV"}
+          </Button>
+          {exportError && <p className="text-sm text-danger">{exportError}</p>}
+        </div>
+      )}
+
+      <Dialog open={errorRowData !== null} onClose={() => setErrorRow(null)} title="שגיאה בעיבוד">
+        <p className="text-sm text-ink">{errorRowData?.error}</p>
+      </Dialog>
+
+      {/* No-op onClose: approving or rejecting is the only way out — closing
+          without a decision would leave the sample row stuck mid-processing
+          with the rest of the batch silently on hold behind it. */}
+      <Dialog open={sampleDialogOpen} onClose={() => {}} title="דוגמה לאישור" size="lg">
+        <div className="space-y-4">
+          {sample.phase === "generating" && (
+            <div className="flex h-64 items-center justify-center text-sm text-muted">
+              מכין דוגמה…
+            </div>
+          )}
+          {sample.phase === "awaiting-approval" && sample.error && (
+            <div className="space-y-3">
+              <p className="text-sm text-danger">{sample.error}</p>
+              <Button onClick={() => rejectSample("")}>נסה שוב</Button>
+            </div>
+          )}
+          {sample.phase === "awaiting-approval" && sample.generated && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted">
+                ככה תיראה כל התמונה בעבודה הזו. אישור יתחיל לעבד את שאר התמונות באותו הקו בדיוק.
+              </p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={sample.generated.imageUrl}
+                alt="דוגמה"
+                className="max-h-[60vh] w-full rounded-sm border border-border bg-white object-contain"
+              />
+              {!showFeedback ? (
+                <div className="flex flex-wrap gap-3">
+                  <Button onClick={approveSample}>אישור, התחל לעבוד על כל התמונות</Button>
+                  <Button variant="secondary" onClick={() => setShowFeedback(true)}>
+                    אין אישור
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <Textarea
+                    label="מה תרצה לשנות?"
+                    placeholder='לדוגמה: "רקע כהה יותר"'
+                    value={feedbackText}
+                    onChange={(e) => setFeedbackText(e.target.value)}
+                    rows={2}
+                    autoFocus
+                  />
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      onClick={() => {
+                        rejectSample(feedbackText);
+                        setFeedbackText("");
+                        setShowFeedback(false);
+                      }}
+                    >
+                      שלח ונסה שוב
+                    </Button>
+                    <Button variant="secondary" onClick={() => setShowFeedback(false)}>
+                      ביטול
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Dialog>
+    </div>
+  );
+}

@@ -368,14 +368,7 @@ export function CreationFlow({
                     values={row}
                     onChange={(patch) => updateRow(row.id, patch)}
                     logos={logos}
-                    // Studio rows burn at saveAll() time, not immediately, so
-                    // fields stay editable through "done" — atmosphere rows
-                    // are already burned by then and must stay locked.
-                    disabled={
-                      mode === "studio"
-                        ? row.status !== "pending" && row.status !== "done"
-                        : row.status !== "pending"
-                    }
+                    disabled={row.status !== "pending"}
                     onLogoAdded={(logo) => setLogos((prev) => [...prev, logo])}
                     burnsPrice={Boolean(templateId)}
                   />
