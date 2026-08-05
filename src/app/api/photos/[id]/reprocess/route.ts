@@ -1,5 +1,6 @@
 import { editWithBackgroundPrompt, generateAtmosphereImage } from "@/lib/gemini";
 import { renderPhoto } from "@/lib/renderPhoto";
+import { resolveTemplate } from "@/lib/photoTemplate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -71,11 +72,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     logoUrl = logo?.image_url ?? null;
   }
 
+  const template = await resolveTemplate(templateId, supabase);
   const burned = await renderPhoto(
     cleanImage,
     { modelNumber, sku, price, sizeMin, sizeMax, color },
     logoUrl,
-    templateId,
+    template,
     zoom,
     customLayout
   );

@@ -341,21 +341,22 @@ export async function burnProductTextFromTemplate(
 
   const layers: sharp.OverlayOptions[] = [];
 
-  if (logoUrl) {
+  if (logoUrl && template.logo) {
+    const logoField = template.logo;
     try {
       const logoRes = await fetch(logoUrl);
       if (logoRes.ok) {
         const logoBuffer = await trimLogo(Buffer.from(await logoRes.arrayBuffer()));
-        const boxWidth = Math.round(template.logo.widthFraction * width);
-        const boxHeight = Math.round(template.logo.heightFraction * height);
+        const boxWidth = Math.round(logoField.widthFraction * width);
+        const boxHeight = Math.round(logoField.heightFraction * height);
         const resizedLogo = await sharp(logoBuffer)
           .resize({ width: boxWidth, height: boxHeight, fit: "inside" })
           .toBuffer();
         const logoMeta = await sharp(resizedLogo).metadata();
         const logoWidth = logoMeta.width ?? boxWidth;
         const logoHeight = logoMeta.height ?? boxHeight;
-        const boxLeft = Math.round(template.logo.leftFraction * width);
-        const boxTop = Math.round(template.logo.topFraction * height);
+        const boxLeft = Math.round(logoField.leftFraction * width);
+        const boxTop = Math.round(logoField.topFraction * height);
         layers.push({
           input: resizedLogo,
           // Centered within the template's box in case the logo's own
@@ -385,8 +386,8 @@ export async function burnProductTextFromTemplate(
     return luminance >= LUMINANCE_THRESHOLD ? PALETTE_ON_LIGHT : PALETTE_ON_DARK;
   }
 
-  async function placeField(field: TemplateTextField, value: string | null) {
-    if (!value) return;
+  async function placeField(field: TemplateTextField | undefined, value: string | null) {
+    if (!value || !field) return;
     const centerX = field.centerXFraction * width;
     const centerY = field.centerYFraction * height;
     const fontPt = Math.max(1, Math.round(field.fontSizeFraction * width));

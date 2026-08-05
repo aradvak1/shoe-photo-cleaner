@@ -1,4 +1,5 @@
 import { renderPhoto } from "@/lib/renderPhoto";
+import { resolveTemplate } from "@/lib/photoTemplate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -48,7 +49,8 @@ export async function POST(request: Request) {
   const templateId = typeof body.template_id === "string" ? body.template_id : null;
   const zoom = typeof body.zoom === "number" ? body.zoom : null;
   const customLayout = body.custom_layout ?? null;
-  const rendered = await renderPhoto(imageBuffer, fields, logoUrl, templateId, zoom, customLayout);
+  const template = await resolveTemplate(templateId, supabase);
+  const rendered = await renderPhoto(imageBuffer, fields, logoUrl, template, zoom, customLayout);
 
   return new Response(new Uint8Array(rendered), { headers: { "Content-Type": "image/png" } });
 }

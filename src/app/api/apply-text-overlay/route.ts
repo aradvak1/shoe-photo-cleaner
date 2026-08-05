@@ -1,4 +1,5 @@
 import { renderPhoto } from "@/lib/renderPhoto";
+import { resolveTemplate } from "@/lib/photoTemplate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -51,7 +52,8 @@ export async function POST(request: Request) {
   const templateId = typeof body.template_id === "string" ? body.template_id : null;
   const zoom = typeof body.zoom === "number" ? body.zoom : null;
   const customLayout = body.custom_layout ?? null;
-  const burned = await renderPhoto(imageBuffer, fields, logoUrl, templateId, zoom, customLayout);
+  const template = await resolveTemplate(templateId, supabase);
+  const burned = await renderPhoto(imageBuffer, fields, logoUrl, template, zoom, customLayout);
 
   const { error } = await supabase.storage
     .from(BUCKET)

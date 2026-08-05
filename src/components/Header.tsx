@@ -11,6 +11,7 @@ const PRIMARY_LINKS = [
 
 const SECONDARY_LINKS = [
   { href: "/photos", label: "גלריה" },
+  { href: "/templates", label: "תבניות" },
   { href: "/logos", label: "לוגואים" },
 ];
 

@@ -12,10 +12,11 @@ import { Dialog } from "@/components/ui/Dialog";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
+import { useDbTemplates } from "@/hooks/useDbTemplates";
 import { useImageCreationQueue } from "@/hooks/useImageCreationQueue";
 import { downloadFile } from "@/lib/downloadFile";
 import { findTemplate, mergeLayout, PHOTO_TEMPLATES } from "@/lib/photoTemplate";
-import type { PhotoTemplate } from "@/lib/photoTemplate";
+import type { PhotoTemplate, TemplateLogoField, TemplateTextField } from "@/lib/photoTemplate";
 import type { Preset } from "@/types";
 
 // The only template defined today — used as the generic starting layout
@@ -37,6 +38,7 @@ type DraggableField = "logo" | "modelNumber" | "price" | "sizes" | "color";
  */
 export function StudioDesignFlow() {
   const { logos, setLogos } = useLogos();
+  const { templates: dbTemplates } = useDbTemplates();
   const {
     rows,
     updateRow,
@@ -80,7 +82,9 @@ export function StudioDesignFlow() {
   const designPreviewBlobRef = useRef<string | null>(null);
 
   const baseTemplate: PhotoTemplate =
-    findTemplate(templateId) ?? findTemplate(GENERIC_BASE_TEMPLATE_ID)!;
+    findTemplate(templateId) ??
+    dbTemplates.find((t) => t.id === templateId) ??
+    findTemplate(GENERIC_BASE_TEMPLATE_ID)!;
   const effectiveLayout: PhotoTemplate = mergeLayout(baseTemplate, designRow?.customLayout);
 
   // Drag-to-move + slide-to-resize for the logo box and each active text
@@ -106,6 +110,7 @@ export function StudioDesignFlow() {
     const rectWidth = rect.width;
     const rectHeight = rect.height;
     const base = effectiveLayout[field];
+    if (!base) return;
     const rowId = designRow.id;
     const rowCustomLayout = designRow.customLayout;
 
@@ -116,7 +121,7 @@ export function StudioDesignFlow() {
       const dxFrac = (ev.clientX - startX) / rectWidth;
       const dyFrac = (ev.clientY - startY) / rectHeight;
       if (field === "logo") {
-        const logoBase = base as PhotoTemplate["logo"];
+        const logoBase = base as TemplateLogoField;
         const logo = {
           ...logoBase,
           leftFraction: clamp(logoBase.leftFraction + dxFrac, 0, 1 - logoBase.widthFraction),
@@ -124,7 +129,7 @@ export function StudioDesignFlow() {
         };
         updateRow(rowId, { customLayout: { ...rowCustomLayout, logo } });
       } else {
-        const fieldBase = base as PhotoTemplate["modelNumber"];
+        const fieldBase = base as TemplateTextField;
         const updated = {
           ...fieldBase,
           centerXFraction: clamp(fieldBase.centerXFraction + dxFrac, 0, 1),
@@ -142,7 +147,7 @@ export function StudioDesignFlow() {
   }
 
   function setLogoScale(scalePercent: number) {
-    if (!designRow) return;
+    if (!designRow || !baseTemplate.logo || !effectiveLayout.logo) return;
     const factor = scalePercent / 100;
     const newWidth = baseTemplate.logo.widthFraction * factor;
     const newHeight = baseTemplate.logo.heightFraction * factor;
@@ -165,6 +170,7 @@ export function StudioDesignFlow() {
     if (!designRow) return;
     const factor = scalePercent / 100;
     const base = baseTemplate[field];
+    if (!base) return;
     updateRow(designRow.id, {
       customLayout: {
         ...designRow.customLayout,
@@ -181,7 +187,7 @@ export function StudioDesignFlow() {
   };
   const TEXT_FIELDS = ["modelNumber", "price", "sizes", "color"] as const;
   function isFieldActive(field: (typeof TEXT_FIELDS)[number]): boolean {
-    if (!designRow) return false;
+    if (!designRow || !effectiveLayout[field]) return false;
     if (field === "modelNumber") return Boolean(designRow.modelNumber);
     if (field === "price") return Boolean(designRow.price);
     if (field === "sizes") return Boolean(designRow.sizeMin || designRow.sizeMax);
@@ -366,7 +372,7 @@ export function StudioDesignFlow() {
               {designRow.rawUrl && (
                 <>
                   {/* Drag the logo box to reposition it — size is controlled by the slider below, not a resize handle, to keep the drag math to one axis of interaction. */}
-                  {designRow.logoId && (
+                  {designRow.logoId && effectiveLayout.logo && (
                     <div
                       onPointerDown={(e) => beginDrag("logo", e)}
                       title="גררו כדי להזיז את הלוגו"
@@ -383,20 +389,23 @@ export function StudioDesignFlow() {
                       </span>
                     </div>
                   )}
-                  {TEXT_FIELDS.filter(isFieldActive).map((field) => (
-                      <div
-                        key={field}
-                        onPointerDown={(e) => beginDrag(field, e)}
-                        title="גררו כדי להזיז"
-                        className="absolute -translate-x-1/2 -translate-y-1/2 cursor-move rounded-full border border-accent bg-ink/80 px-2 py-0.5 text-[10px] whitespace-nowrap text-white hover:bg-ink"
-                        style={{
-                          left: `${effectiveLayout[field].centerXFraction * 100}%`,
-                          top: `${effectiveLayout[field].centerYFraction * 100}%`,
-                        }}
-                      >
-                        {FIELD_LABELS[field]}
-                      </div>
-                    ))}
+                  {TEXT_FIELDS.filter(isFieldActive).map((field) => {
+                      const layout = effectiveLayout[field]!;
+                      return (
+                        <div
+                          key={field}
+                          onPointerDown={(e) => beginDrag(field, e)}
+                          title="גררו כדי להזיז"
+                          className="absolute -translate-x-1/2 -translate-y-1/2 cursor-move rounded-full border border-accent bg-ink/80 px-2 py-0.5 text-[10px] whitespace-nowrap text-white hover:bg-ink"
+                          style={{
+                            left: `${layout.centerXFraction * 100}%`,
+                            top: `${layout.centerYFraction * 100}%`,
+                          }}
+                        >
+                          {FIELD_LABELS[field]}
+                        </div>
+                      );
+                    })}
                 </>
               )}
             </div>
@@ -431,6 +440,15 @@ export function StudioDesignFlow() {
                     {t.label}
                   </option>
                 ))}
+                {dbTemplates.length > 0 && (
+                  <optgroup label="תבניות שלי">
+                    {dbTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </Select>
 
               <div>
@@ -460,7 +478,7 @@ export function StudioDesignFlow() {
                   onChange={setDefaultLogoId}
                   onLogoAdded={(logo) => setLogos((prev) => [...prev, logo])}
                 />
-                {designRow.logoId && (
+                {designRow.logoId && effectiveLayout.logo && baseTemplate.logo && (
                   <div className="mt-2">
                     <div className="mb-1 flex items-center justify-between text-[10px] text-muted">
                       <span>גודל הלוגו</span>
@@ -496,30 +514,27 @@ export function StudioDesignFlow() {
                   ניתן לגרור את הלוגו ואת התוויות (דגם/מחיר/מידות/צבע) ישירות על התמונה כדי להזיז אותם.
                 </p>
                 <div className="mt-2 space-y-2">
-                  {TEXT_FIELDS.filter(isFieldActive).map((field) => (
-                      <div key={field}>
-                        <div className="mb-1 flex items-center justify-between text-[10px] text-muted">
-                          <span>גודל {FIELD_LABELS[field]}</span>
-                          <span>
-                            {Math.round(
-                              (effectiveLayout[field].fontSizeFraction / baseTemplate[field].fontSizeFraction) * 100
-                            )}
-                            %
-                          </span>
+                  {TEXT_FIELDS.filter(isFieldActive).map((field) => {
+                      const current = effectiveLayout[field]!.fontSizeFraction;
+                      const base = baseTemplate[field]!.fontSizeFraction;
+                      return (
+                        <div key={field}>
+                          <div className="mb-1 flex items-center justify-between text-[10px] text-muted">
+                            <span>גודל {FIELD_LABELS[field]}</span>
+                            <span>{Math.round((current / base) * 100)}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={50}
+                            max={200}
+                            step={5}
+                            value={Math.round((current / base) * 100)}
+                            onChange={(e) => setFieldScale(field, Number(e.target.value))}
+                            className="w-full accent-accent"
+                          />
                         </div>
-                        <input
-                          type="range"
-                          min={50}
-                          max={200}
-                          step={5}
-                          value={Math.round(
-                            (effectiveLayout[field].fontSizeFraction / baseTemplate[field].fontSizeFraction) * 100
-                          )}
-                          onChange={(e) => setFieldScale(field, Number(e.target.value))}
-                          className="w-full accent-accent"
-                        />
-                      </div>
-                    ))}
+                      );
+                    })}
                 </div>
               </div>
 

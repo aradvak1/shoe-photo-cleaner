@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useLogos } from "@/components/LogoSelect";
+import { useDbTemplates } from "@/hooks/useDbTemplates";
 import { downloadFile } from "@/lib/downloadFile";
 import { MetadataFieldPicker } from "@/components/create/PhotoMetadataFields";
 import { PHOTO_TEMPLATES } from "@/lib/photoTemplate";
@@ -39,6 +40,7 @@ function toEditValues(photo: Photo): EditValues {
 
 export default function PhotosPage() {
   const { logos } = useLogos();
+  const { templates: dbTemplates } = useDbTemplates();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -294,6 +296,15 @@ export default function PhotosPage() {
                     {t.label}
                   </option>
                 ))}
+                {dbTemplates.length > 0 && (
+                  <optgroup label="תבניות שלי">
+                    {dbTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </Select>
             )}
 
