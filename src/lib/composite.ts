@@ -414,8 +414,23 @@ export async function burnProductTextFromTemplate(
   const NUDGE_STEP = Math.round(width * 0.02);
   const NUDGE_MAX_ATTEMPTS = 5;
 
+  // Busyness only tells us whether a spot overlaps the PRODUCT — it says
+  // nothing about whether it overlaps another element from this same
+  // template (e.g. a custom template with the color field placed right
+  // next to the logo). Every element's final box — including a locked
+  // (user-dragged) one — is recorded here so later elements steer clear
+  // of it too, in the same fixed order they're placed below (logo, then
+  // modelNumber/price/sizes/color).
+  const placedRects: { left: number; top: number; width: number; height: number }[] = [];
+
   function clampRange(value: number, min: number, max: number) {
     return Math.min(max, Math.max(min, value));
+  }
+
+  function overlapsPlaced(left: number, top: number, boxWidth: number, boxHeight: number): boolean {
+    return placedRects.some(
+      (r) => left < r.left + r.width && left + boxWidth > r.left && top < r.top + r.height && top + boxHeight > r.top
+    );
   }
 
   function pickFallbackCorner(): CornerScore {
@@ -430,7 +445,9 @@ export async function burnProductTextFromTemplate(
    * (initialLeft, initialTop) — unchanged if that spot is clear, nudged
    * further into its own corner if not, or relocated to a distinct free
    * image corner as a last resort. Skipped entirely (returns the initial
-   * position verbatim) for a field the user explicitly dragged.
+   * position verbatim) for a field the user explicitly dragged — but that
+   * position is still recorded in placedRects, so a later *unlocked*
+   * element won't be placed on top of it.
    */
   async function resolvePosition(
     key: "logo" | "modelNumber" | "price" | "sizes" | "color",
@@ -439,10 +456,17 @@ export async function burnProductTextFromTemplate(
     boxWidth: number,
     boxHeight: number
   ): Promise<{ left: number; top: number }> {
-    if (lockedFields?.has(key)) return { left: initialLeft, top: initialTop };
+    function place(left: number, top: number) {
+      placedRects.push({ left, top, width: boxWidth, height: boxHeight });
+      return { left, top };
+    }
+
+    if (lockedFields?.has(key)) return place(initialLeft, initialTop);
 
     const initial = await regionBusyness(imageBuffer, initialLeft, initialTop, boxWidth, boxHeight, width, height);
-    if (initial.busyness < collisionThreshold) return { left: initialLeft, top: initialTop };
+    if (initial.busyness < collisionThreshold && !overlapsPlaced(initialLeft, initialTop, boxWidth, boxHeight)) {
+      return place(initialLeft, initialTop);
+    }
 
     const centerX = initialLeft + boxWidth / 2;
     const centerY = initialTop + boxHeight / 2;
@@ -459,14 +483,25 @@ export async function burnProductTextFromTemplate(
     for (let attempt = 1; attempt <= NUDGE_MAX_ATTEMPTS; attempt++) {
       const candidateLeft = clampRange(initialLeft + dx * attempt * NUDGE_STEP, leftMin, leftMax);
       const candidateTop = clampRange(initialTop + dy * attempt * NUDGE_STEP, topMin, topMax);
+      if (overlapsPlaced(candidateLeft, candidateTop, boxWidth, boxHeight)) continue;
       const probe = await regionBusyness(imageBuffer, candidateLeft, candidateTop, boxWidth, boxHeight, width, height);
       if (probe.busyness < collisionThreshold) {
-        return { left: candidateLeft, top: candidateTop };
+        return place(candidateLeft, candidateTop);
       }
     }
 
-    const fallback = pickFallbackCorner();
-    return cornerPosition(fallback.corner, boxWidth, boxHeight, width, height, margin);
+    // Last resort: try each remaining free corner (not just the single
+    // least-busy one) so a corner that's clear of the product but happens
+    // to already hold a sibling element doesn't get reused anyway.
+    for (let i = 0; i < baseline.length; i++) {
+      const fallback = pickFallbackCorner();
+      const pos = cornerPosition(fallback.corner, boxWidth, boxHeight, width, height, margin);
+      if (!overlapsPlaced(pos.left, pos.top, boxWidth, boxHeight)) {
+        return place(pos.left, pos.top);
+      }
+    }
+    const pos = cornerPosition(baseline[0].corner, boxWidth, boxHeight, width, height, margin);
+    return place(pos.left, pos.top);
   }
 
   const layers: sharp.OverlayOptions[] = [];
