@@ -67,6 +67,41 @@ interface CornerScore {
 }
 
 /**
+ * Scores an arbitrary rectangle's "busyness" (summed per-channel pixel
+ * variance — high for product/hardware/shadow detail, low for a flat
+ * background) and average luminance. Fully clamps the box to the image's
+ * own bounds since, unlike the fixed corner regions in
+ * rankCornersByBusyness, candidate boxes here (nudged positions, a
+ * rendered text field's own footprint) aren't guaranteed to already fit.
+ */
+async function regionBusyness(
+  imageBuffer: Buffer,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  imageWidth: number,
+  imageHeight: number
+): Promise<{ busyness: number; luminance: number }> {
+  const clampedLeft = Math.max(0, Math.min(Math.round(left), imageWidth - 1));
+  const clampedTop = Math.max(0, Math.min(Math.round(top), imageHeight - 1));
+  const safeWidth = Math.max(1, Math.min(Math.round(width), imageWidth - clampedLeft));
+  const safeHeight = Math.max(1, Math.min(Math.round(height), imageHeight - clampedTop));
+  // sharp's .stats() silently ignores a preceding .extract() on the same
+  // pipeline (reproduced directly: returns the WHOLE image's stats every
+  // time regardless of the extract box) unless the crop is materialized
+  // to its own buffer first — this round-trip is required, not optional.
+  const crop = await sharp(imageBuffer)
+    .extract({ left: clampedLeft, top: clampedTop, width: safeWidth, height: safeHeight })
+    .toBuffer();
+  const stats = await sharp(crop).stats();
+  const busyness = stats.channels.reduce((sum, c) => sum + c.stdev, 0);
+  const [r, g, b] = stats.channels;
+  const luminance = 0.299 * r.mean + 0.587 * g.mean + 0.114 * b.mean;
+  return { busyness, luminance };
+}
+
+/**
  * Ranks all 4 corners of the image from least to most "busy" (lowest to
  * highest pixel variance in a same-sized crop at each corner), preferring
  * bottom-left on near-ties, and reports each corner's average luminance so
@@ -96,17 +131,15 @@ async function rankCornersByBusyness(
   const scored = await Promise.all(
     order.map(async (corner, i) => {
       const pos = positions[corner];
-      const stats = await sharp(imageBuffer)
-        .extract({
-          left: Math.max(0, Math.round(pos.left)),
-          top: Math.max(0, Math.round(pos.top)),
-          width: w,
-          height: h,
-        })
-        .stats();
-      const busyness = stats.channels.reduce((sum, c) => sum + c.stdev, 0);
-      const [r, g, b] = stats.channels;
-      const luminance = 0.299 * r.mean + 0.587 * g.mean + 0.114 * b.mean;
+      const { busyness, luminance } = await regionBusyness(
+        imageBuffer,
+        pos.left,
+        pos.top,
+        w,
+        h,
+        imageWidth,
+        imageHeight
+      );
       // Tiny index-based bias preserves the declared preference order
       // (bottom-left first) when regions are equally empty/busy.
       return { corner, busyness: busyness + i * 0.01, luminance };
@@ -164,9 +197,15 @@ export async function applyZoom(imageBuffer: Buffer, zoomPercent: number): Promi
   }
 
   const cornerSize = Math.min(20, width, height);
-  const cornerStats = await sharp(imageBuffer)
+  // sharp's .stats() silently ignores a preceding .extract() unless the
+  // crop is materialized to its own buffer first (reproduced directly:
+  // chaining .extract().stats() on the same pipeline returns the WHOLE
+  // image's stats every time, regardless of the extract box) — so the
+  // crop must be its own toBuffer() round-trip before .stats() sees it.
+  const cornerCrop = await sharp(imageBuffer)
     .extract({ left: 0, top: 0, width: cornerSize, height: cornerSize })
-    .stats();
+    .toBuffer();
+  const cornerStats = await sharp(cornerCrop).stats();
   const [r, g, b] = cornerStats.channels;
   const background = { r: Math.round(r.mean), g: Math.round(g.mean), b: Math.round(b.mean), alpha: 1 };
   const left = Math.round((width - scaledWidth) / 2);
@@ -328,16 +367,107 @@ export async function burnProductText(
  * light/dark palette switch, sampled at each field's own fixed spot
  * (a template built against a white mockup would otherwise go invisible
  * on a dark photo).
+ *
+ * Because the AI generation step (gemini.ts) has no constraint on where in
+ * the frame the product ends up, a fixed template position can land right
+ * on top of the product on any given photo even though it was designed
+ * against a mockup where it didn't. Each element (logo + each text field)
+ * is checked against the actual photo before being placed: if its spot is
+ * "busy" (product/hardware/shadow detail, not flat background — same
+ * pixel-variance heuristic burnProductText already uses for auto-mode
+ * corner picking), it's nudged further into whichever corner it's already
+ * closest to, and if that's still not enough, it falls back to the
+ * least-busy image corner that no other element has already claimed —
+ * never silently overlapping the product, while staying at its designed
+ * spot on the (common) case where there's no conflict. A field the user
+ * has manually dragged (lockedFields) always skips this and is placed
+ * exactly where they put it — an explicit choice is never second-guessed.
  */
 export async function burnProductTextFromTemplate(
   imageBuffer: Buffer,
   fields: OverlayTextFields,
   logoUrl: string | null | undefined,
-  template: PhotoTemplate
+  template: PhotoTemplate,
+  lockedFields?: ReadonlySet<"logo" | "modelNumber" | "price" | "sizes" | "color">
 ): Promise<Buffer> {
   const meta = await sharp(imageBuffer).metadata();
   const width = meta.width ?? CANVAS_WIDTH;
   const height = meta.height ?? CANVAS_HEIGHT;
+  const margin = Math.round(width * 0.035);
+
+  // One upfront pass over the whole photo's 4 corners establishes this
+  // specific photo's own "calm background" baseline — used both as the
+  // collision threshold (a spot much busier than the calmest corner is
+  // probably the product, not floor/backdrop) and as the fallback corner
+  // list. A relative multiplier alone misfires on a near-blank corner
+  // (tiny stdev makes the threshold trivially easy to trip on ordinary
+  // anti-aliasing noise); an absolute margin alone misfires on a
+  // naturally textured background (stdev high everywhere, threshold too
+  // low). Taking the larger of the two guards both directions. Untuned
+  // first guess — revisit if real photos show false positives/negatives.
+  const probeWidth = Math.round(width * 0.32);
+  const probeHeight = Math.round(height * 0.1);
+  const baseline = await rankCornersByBusyness(imageBuffer, probeWidth, probeHeight, width, height);
+  const calmest = baseline[0].busyness;
+  const collisionThreshold = Math.max(calmest * 2.5, calmest + 8);
+  const claimedCorners = new Set<Corner>();
+  const NUDGE_STEP = Math.round(width * 0.02);
+  const NUDGE_MAX_ATTEMPTS = 5;
+
+  function clampRange(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function pickFallbackCorner(): CornerScore {
+    const free = baseline.find((c) => !claimedCorners.has(c.corner));
+    const chosen = free ?? baseline[0];
+    claimedCorners.add(chosen.corner);
+    return chosen;
+  }
+
+  /**
+   * Resolves the final left/top for a box that was about to be placed at
+   * (initialLeft, initialTop) — unchanged if that spot is clear, nudged
+   * further into its own corner if not, or relocated to a distinct free
+   * image corner as a last resort. Skipped entirely (returns the initial
+   * position verbatim) for a field the user explicitly dragged.
+   */
+  async function resolvePosition(
+    key: "logo" | "modelNumber" | "price" | "sizes" | "color",
+    initialLeft: number,
+    initialTop: number,
+    boxWidth: number,
+    boxHeight: number
+  ): Promise<{ left: number; top: number }> {
+    if (lockedFields?.has(key)) return { left: initialLeft, top: initialTop };
+
+    const initial = await regionBusyness(imageBuffer, initialLeft, initialTop, boxWidth, boxHeight, width, height);
+    if (initial.busyness < collisionThreshold) return { left: initialLeft, top: initialTop };
+
+    const centerX = initialLeft + boxWidth / 2;
+    const centerY = initialTop + boxHeight / 2;
+    const dx = centerX < width / 2 ? -1 : 1;
+    const dy = centerY < height / 2 ? -1 : 1;
+    // Never let a nudge carry the box past the canvas's own center line —
+    // past that point it's not "further into its corner" anymore, it's an
+    // unrelated relocation.
+    const leftMin = dx < 0 ? 0 : Math.min(width - boxWidth, width / 2);
+    const leftMax = dx < 0 ? Math.max(0, width / 2 - boxWidth) : width - boxWidth;
+    const topMin = dy < 0 ? 0 : Math.min(height - boxHeight, height / 2);
+    const topMax = dy < 0 ? Math.max(0, height / 2 - boxHeight) : height - boxHeight;
+
+    for (let attempt = 1; attempt <= NUDGE_MAX_ATTEMPTS; attempt++) {
+      const candidateLeft = clampRange(initialLeft + dx * attempt * NUDGE_STEP, leftMin, leftMax);
+      const candidateTop = clampRange(initialTop + dy * attempt * NUDGE_STEP, topMin, topMax);
+      const probe = await regionBusyness(imageBuffer, candidateLeft, candidateTop, boxWidth, boxHeight, width, height);
+      if (probe.busyness < collisionThreshold) {
+        return { left: candidateLeft, top: candidateTop };
+      }
+    }
+
+    const fallback = pickFallbackCorner();
+    return cornerPosition(fallback.corner, boxWidth, boxHeight, width, height, margin);
+  }
 
   const layers: sharp.OverlayOptions[] = [];
 
@@ -357,13 +487,12 @@ export async function burnProductTextFromTemplate(
         const logoHeight = logoMeta.height ?? boxHeight;
         const boxLeft = Math.round(logoField.leftFraction * width);
         const boxTop = Math.round(logoField.topFraction * height);
-        layers.push({
-          input: resizedLogo,
-          // Centered within the template's box in case the logo's own
-          // aspect ratio doesn't exactly match the box's.
-          left: boxLeft + Math.round((boxWidth - logoWidth) / 2),
-          top: boxTop + Math.round((boxHeight - logoHeight) / 2),
-        });
+        // Centered within the template's box in case the logo's own
+        // aspect ratio doesn't exactly match the box's.
+        const initialLeft = boxLeft + Math.round((boxWidth - logoWidth) / 2);
+        const initialTop = boxTop + Math.round((boxHeight - logoHeight) / 2);
+        const resolved = await resolvePosition("logo", initialLeft, initialTop, logoWidth, logoHeight);
+        layers.push({ input: resizedLogo, left: resolved.left, top: resolved.top });
       }
     } catch {
       // A logo fetch failure shouldn't block the rest of the template.
@@ -371,22 +500,21 @@ export async function burnProductTextFromTemplate(
   }
 
   async function sampleLuminanceAt(centerX: number, centerY: number, probeWidth: number, probeHeight: number) {
-    const left = Math.max(0, Math.min(width - probeWidth, Math.round(centerX - probeWidth / 2)));
-    const top = Math.max(0, Math.min(height - probeHeight, Math.round(centerY - probeHeight / 2)));
-    const safeWidth = Math.min(probeWidth, width - left);
-    const safeHeight = Math.min(probeHeight, height - top);
-    const stats = await sharp(imageBuffer)
-      .extract({ left, top, width: Math.max(1, safeWidth), height: Math.max(1, safeHeight) })
-      .stats();
-    const [r, g, b] = stats.channels;
-    return 0.299 * r.mean + 0.587 * g.mean + 0.114 * b.mean;
+    const left = Math.round(centerX - probeWidth / 2);
+    const top = Math.round(centerY - probeHeight / 2);
+    const { luminance } = await regionBusyness(imageBuffer, left, top, probeWidth, probeHeight, width, height);
+    return luminance;
   }
 
   function paletteFor(luminance: number) {
     return luminance >= LUMINANCE_THRESHOLD ? PALETTE_ON_LIGHT : PALETTE_ON_DARK;
   }
 
-  async function placeField(field: TemplateTextField | undefined, value: string | null) {
+  async function placeField(
+    key: "modelNumber" | "price" | "sizes" | "color",
+    field: TemplateTextField | undefined,
+    value: string | null
+  ) {
     if (!value || !field) return;
     const centerX = field.centerXFraction * width;
     const centerY = field.centerYFraction * height;
@@ -409,17 +537,18 @@ export async function burnProductTextFromTemplate(
     const textMeta = await sharp(buffer).metadata();
     const textWidth = textMeta.width ?? 0;
     const textHeight = textMeta.height ?? 0;
-    const left = Math.max(0, Math.min(width - textWidth, Math.round(centerX - textWidth / 2)));
-    const top = Math.max(0, Math.min(height - textHeight, Math.round(centerY - textHeight / 2)));
-    layers.push({ input: buffer, left, top });
+    const initialLeft = Math.max(0, Math.min(width - textWidth, Math.round(centerX - textWidth / 2)));
+    const initialTop = Math.max(0, Math.min(height - textHeight, Math.round(centerY - textHeight / 2)));
+    const resolved = await resolvePosition(key, initialLeft, initialTop, textWidth, textHeight);
+    layers.push({ input: buffer, left: resolved.left, top: resolved.top });
   }
 
-  await placeField(template.modelNumber, fields.modelNumber ?? null);
-  await placeField(template.price, fields.price != null ? String(fields.price) : null);
+  await placeField("modelNumber", template.modelNumber, fields.modelNumber ?? null);
+  await placeField("price", template.price, fields.price != null ? String(fields.price) : null);
   if (fields.sizeMin != null || fields.sizeMax != null) {
-    await placeField(template.sizes, `${fields.sizeMin ?? "?"}-${fields.sizeMax ?? "?"}`);
+    await placeField("sizes", template.sizes, `${fields.sizeMin ?? "?"}-${fields.sizeMax ?? "?"}`);
   }
-  await placeField(template.color, fields.color ?? null);
+  await placeField("color", template.color, fields.color ?? null);
 
   if (layers.length === 0) return imageBuffer;
   return sharp(imageBuffer).composite(layers).png().toBuffer();

@@ -42,5 +42,11 @@ export async function renderPhoto(
   const base = template ?? (hasCustomLayout ? findTemplate(GENERIC_BASE_TEMPLATE_ID) : null);
   if (!base) return burnProductText(zoomed, fields, logoUrl);
   const effective = mergeLayout(base, customLayout);
-  return burnProductTextFromTemplate(zoomed, fields, logoUrl, effective);
+  // Fields the user explicitly dragged (present in customLayout) must never
+  // be auto-nudged away from where they put them — only the template's own
+  // default position for a field is subject to collision avoidance.
+  const lockedFields = new Set(Object.keys(customLayout ?? {})) as Set<
+    "logo" | "modelNumber" | "price" | "sizes" | "color"
+  >;
+  return burnProductTextFromTemplate(zoomed, fields, logoUrl, effective, lockedFields);
 }
