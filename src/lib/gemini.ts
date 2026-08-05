@@ -49,21 +49,18 @@ interface GeminiInlinePart {
   inline_data: { mime_type: string; data: string };
 }
 
-async function callGeminiGenerate(
+/** Thrown for a Gemini failure Google itself documents as transient (model
+ * overload / rate limiting) — distinct from a permanent problem (bad key,
+ * spend cap, safety block) that retrying can never fix. */
+class GeminiTransientError extends Error {}
+
+async function attemptGeminiGenerate(
   fileBuffer: Buffer,
   mimeType: string,
   promptText: string,
-  extraReferenceImages: { buffer: Buffer; mimeType: string }[] = []
+  referenceParts: GeminiInlinePart[],
+  apiKey: string
 ): Promise<Buffer> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing GEMINI_API_KEY environment variable");
-  }
-
-  const referenceParts: GeminiInlinePart[] = extraReferenceImages.map((ref) => ({
-    inline_data: { mime_type: ref.mimeType, data: ref.buffer.toString("base64") },
-  }));
-
   const response = await fetch(GEMINI_GENERATE_URL, {
     method: "POST",
     headers: {
@@ -98,7 +95,15 @@ async function callGeminiGenerate(
         "חריגה ממכסת ההוצאה החודשית של Google Gemini — יש להיכנס ל-Google AI Studio (ai.studio/spend) ולהעלות את התקרה כדי שיצירת התמונות תמשיך לעבוד."
       );
     }
-    throw new Error(`Gemini API error (${response.status}): ${detail || response.statusText}`);
+    const message = `Gemini API error (${response.status}): ${detail || response.statusText}`;
+    // 503 ("model currently experiencing high demand... usually temporary",
+    // per Google's own error text) and plain 429 rate-limiting (too many
+    // requests right now, not out of budget) are worth retrying — unlike
+    // the spend cap above, waiting a few seconds routinely resolves these.
+    if (response.status === 503 || response.status === 429) {
+      throw new GeminiTransientError(message);
+    }
+    throw new Error(message);
   }
 
   const data = await response.json();
@@ -116,6 +121,43 @@ async function callGeminiGenerate(
 
   const rawImage = Buffer.from(imagePart.inlineData.data, "base64");
   return sharp(rawImage).resize(OUTPUT_SIZE, OUTPUT_SIZE).png().toBuffer();
+}
+
+// Increasing backoff before each retry of a transient failure — gives a
+// genuine demand spike a real chance to pass rather than hammering the
+// same overloaded endpoint immediately. Three retries (four attempts
+// total) costs at most ~17s of extra wait, well inside this route's
+// generous maxDuration, and turns a routine "high demand" blip into a
+// success instead of a hard failure the seller has to notice and retry
+// by hand.
+const TRANSIENT_RETRY_DELAYS_MS = [2000, 5000, 10000];
+
+async function callGeminiGenerate(
+  fileBuffer: Buffer,
+  mimeType: string,
+  promptText: string,
+  extraReferenceImages: { buffer: Buffer; mimeType: string }[] = []
+): Promise<Buffer> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing GEMINI_API_KEY environment variable");
+  }
+
+  const referenceParts: GeminiInlinePart[] = extraReferenceImages.map((ref) => ({
+    inline_data: { mime_type: ref.mimeType, data: ref.buffer.toString("base64") },
+  }));
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await attemptGeminiGenerate(fileBuffer, mimeType, promptText, referenceParts, apiKey);
+    } catch (err) {
+      if (err instanceof GeminiTransientError && attempt < TRANSIENT_RETRY_DELAYS_MS.length) {
+        await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAYS_MS[attempt]));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 /**
