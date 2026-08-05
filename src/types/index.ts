@@ -24,6 +24,8 @@ export interface Preset {
   size_max: number | null;
   color: string | null;
   template_id: string | null;
+  zoom: number | null;
+  custom_layout: CustomLayout | null;
   created_at: string;
 }
 

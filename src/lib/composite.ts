@@ -10,6 +10,23 @@ import type { PhotoTemplate, TemplateTextField } from "./photoTemplate";
 const CANVAS_WIDTH = Number(process.env.CANVAS_WIDTH ?? 1080);
 const CANVAS_HEIGHT = Number(process.env.CANVAS_HEIGHT ?? 1080);
 
+/**
+ * Crops a logo file down to its own visible (non-transparent) artwork
+ * before fitting it into a box. Logo files exported from design tools
+ * (e.g. a full Canva canvas) often carry a lot of transparent padding
+ * around the actual mark — without trimming, `fit: "inside"` sizes to
+ * that padded canvas, so enlarging the box grows mostly empty space
+ * instead of the visible logo. Falls back to the untrimmed buffer if
+ * trim() fails (e.g. a logo with no uniform border to detect).
+ */
+async function trimLogo(buffer: Buffer): Promise<Buffer> {
+  try {
+    return await sharp(buffer).trim().toBuffer();
+  } catch {
+    return buffer;
+  }
+}
+
 export interface OverlayTextFields {
   modelNumber?: string | null;
   sku?: string | null;
@@ -268,10 +285,10 @@ export async function burnProductText(
     try {
       const logoRes = await fetch(logoUrl!);
       if (logoRes.ok) {
-        const logoBuffer = Buffer.from(await logoRes.arrayBuffer());
+        const logoBuffer = await trimLogo(Buffer.from(await logoRes.arrayBuffer()));
         const targetSize = Math.round(width * 0.14);
         const resizedLogo = await sharp(logoBuffer)
-          .resize({ width: targetSize, height: targetSize, fit: "inside", withoutEnlargement: true })
+          .resize({ width: targetSize, height: targetSize, fit: "inside" })
           .toBuffer();
         const logoMeta = await sharp(resizedLogo).metadata();
         logoLayer = {
@@ -328,11 +345,11 @@ export async function burnProductTextFromTemplate(
     try {
       const logoRes = await fetch(logoUrl);
       if (logoRes.ok) {
-        const logoBuffer = Buffer.from(await logoRes.arrayBuffer());
+        const logoBuffer = await trimLogo(Buffer.from(await logoRes.arrayBuffer()));
         const boxWidth = Math.round(template.logo.widthFraction * width);
         const boxHeight = Math.round(template.logo.heightFraction * height);
         const resizedLogo = await sharp(logoBuffer)
-          .resize({ width: boxWidth, height: boxHeight, fit: "inside", withoutEnlargement: true })
+          .resize({ width: boxWidth, height: boxHeight, fit: "inside" })
           .toBuffer();
         const logoMeta = await sharp(resizedLogo).metadata();
         const logoWidth = logoMeta.width ?? boxWidth;
@@ -401,6 +418,7 @@ export async function burnProductTextFromTemplate(
   if (fields.sizeMin != null || fields.sizeMax != null) {
     await placeField(template.sizes, `${fields.sizeMin ?? "?"}-${fields.sizeMax ?? "?"}`);
   }
+  await placeField(template.color, fields.color ?? null);
 
   if (layers.length === 0) return imageBuffer;
   return sharp(imageBuffer).composite(layers).png().toBuffer();

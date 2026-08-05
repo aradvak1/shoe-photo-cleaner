@@ -50,6 +50,17 @@ export default function PhotosPage() {
   const [editZoom, setEditZoom] = useState(100);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  async function handleDelete(photo: Photo) {
+    if (confirmDeleteId !== photo.id) {
+      setConfirmDeleteId(photo.id);
+      return;
+    }
+    setConfirmDeleteId(null);
+    setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+    await fetch(`/api/photos/${photo.id}`, { method: "DELETE" });
+  }
 
   function openEdit(photo: Photo) {
     setEditingPhoto(photo);
@@ -212,6 +223,17 @@ export default function PhotosPage() {
                         }}
                       >
                         עריכה
+                      </Button>
+                      <Button
+                        variant={confirmDeleteId === photo.id ? "danger" : "secondary"}
+                        size="sm"
+                        className="w-full"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(photo);
+                        }}
+                      >
+                        {confirmDeleteId === photo.id ? "לאשר מחיקה" : "מחיקה"}
                       </Button>
                     </div>
                   </CardBody>

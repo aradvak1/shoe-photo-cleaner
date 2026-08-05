@@ -45,6 +45,8 @@ export async function POST(request: Request) {
       size_max: body.size_max ?? null,
       color: body.color ?? null,
       template_id: body.template_id ?? null,
+      zoom: body.zoom ?? null,
+      custom_layout: body.custom_layout ?? null,
     })
     .select()
     .single();

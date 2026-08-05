@@ -40,6 +40,7 @@ export interface PhotoTemplate {
   modelNumber: TemplateTextField;
   price: TemplateTextField;
   sizes: TemplateTextField;
+  color: TemplateTextField;
 }
 
 export const PHOTO_TEMPLATES: PhotoTemplate[] = [
@@ -52,25 +53,31 @@ export const PHOTO_TEMPLATES: PhotoTemplate[] = [
       widthFraction: 400 / 1080,
       heightFraction: 303 / 1350,
     },
-    // All three text fields form one symmetric stacked column, bottom-right,
+    // All four text fields form one symmetric stacked column, bottom-right,
     // sharing the same centerXFraction so every line lines up regardless of
     // its text length — replaces the original design's split left/right
     // placement, which read as unbalanced once real values were filled in.
     modelNumber: {
       centerXFraction: 900 / 1080,
-      centerYFraction: 1135 / 1350,
+      centerYFraction: 1100 / 1350,
       fontSizeFraction: 66.6667 / 1080,
       label: "דגם : ",
     },
     sizes: {
       centerXFraction: 900 / 1080,
-      centerYFraction: 1220 / 1350,
+      centerYFraction: 1180 / 1350,
       fontSizeFraction: 49.3338 / 1080,
       label: "מידות : ",
     },
+    color: {
+      centerXFraction: 900 / 1080,
+      centerYFraction: 1240 / 1350,
+      fontSizeFraction: 49.3338 / 1080,
+      label: "צבע : ",
+    },
     price: {
       centerXFraction: 900 / 1080,
-      centerYFraction: 1285 / 1350,
+      centerYFraction: 1300 / 1350,
       fontSizeFraction: 49.3338 / 1080,
       label: "מחיר : ",
     },
@@ -92,6 +99,7 @@ export interface CustomLayout {
   modelNumber?: Partial<Omit<TemplateTextField, "label">>;
   price?: Partial<Omit<TemplateTextField, "label">>;
   sizes?: Partial<Omit<TemplateTextField, "label">>;
+  color?: Partial<Omit<TemplateTextField, "label">>;
 }
 
 export function mergeLayout(base: PhotoTemplate, overrides?: CustomLayout | null): PhotoTemplate {
@@ -104,5 +112,6 @@ export function mergeLayout(base: PhotoTemplate, overrides?: CustomLayout | null
       : base.modelNumber,
     price: overrides.price ? { ...base.price, ...overrides.price } : base.price,
     sizes: overrides.sizes ? { ...base.sizes, ...overrides.sizes } : base.sizes,
+    color: overrides.color ? { ...base.color, ...overrides.color } : base.color,
   };
 }

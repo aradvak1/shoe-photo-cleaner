@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Dropzone } from "@/components/Dropzone";
 import { LogoSelect, useLogos } from "@/components/LogoSelect";
 import { MetadataFieldPicker } from "@/components/create/PhotoMetadataFields";
+import { PresetBar } from "@/components/create/PresetBar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -15,13 +16,14 @@ import { useImageCreationQueue } from "@/hooks/useImageCreationQueue";
 import { downloadFile } from "@/lib/downloadFile";
 import { findTemplate, mergeLayout, PHOTO_TEMPLATES } from "@/lib/photoTemplate";
 import type { PhotoTemplate } from "@/lib/photoTemplate";
+import type { Preset } from "@/types";
 
 // The only template defined today — used as the generic starting layout
 // when dragging/resizing without an explicit template selected (dragging
 // needs *some* fixed base to nudge from). See renderPhoto.ts, which
 // falls back to the same template server-side for the actual burn.
 const GENERIC_BASE_TEMPLATE_ID = "grazia-donna";
-type DraggableField = "logo" | "modelNumber" | "price" | "sizes";
+type DraggableField = "logo" | "modelNumber" | "price" | "sizes" | "color";
 
 /**
  * The studio creation screen, redesigned per user request around a single
@@ -175,7 +177,16 @@ export function StudioDesignFlow() {
     modelNumber: "דגם",
     price: "מחיר",
     sizes: "מידות",
+    color: "צבע",
   };
+  const TEXT_FIELDS = ["modelNumber", "price", "sizes", "color"] as const;
+  function isFieldActive(field: (typeof TEXT_FIELDS)[number]): boolean {
+    if (!designRow) return false;
+    if (field === "modelNumber") return Boolean(designRow.modelNumber);
+    if (field === "price") return Boolean(designRow.price);
+    if (field === "sizes") return Boolean(designRow.sizeMin || designRow.sizeMax);
+    return Boolean(designRow.color);
+  }
 
   // Live-renders the design row exactly as it'll be sent for approval —
   // template/logo/fields burned on top of the RAW photo, plus the zoom
@@ -265,6 +276,30 @@ export function StudioDesignFlow() {
     rows.filter((r) => r.status === "pending").forEach((r) => updateRow(r.id, { zoom }));
   }
 
+  // Loading a saved preset reproduces the whole design in one click — the
+  // point of "תבנית 1: דגם 100%, מחיר 80%, לוגו 150%" style presets: not
+  // just which fields/template, but the exact zoom and drag/resize layout
+  // too, applied to every pending photo so a fresh batch is ready
+  // immediately without re-doing the design per photo.
+  function handlePresetApply(preset: Preset) {
+    setCustomPrompt(preset.prompt ?? "");
+    setTemplateId(preset.template_id ?? "");
+    applyDefaults({
+      logoId: preset.logo_id ?? "",
+      modelNumber: preset.model_number ?? "",
+      sku: preset.sku ?? "",
+      price: preset.price != null ? String(preset.price) : "",
+      sizeMin: preset.size_min != null ? String(preset.size_min) : "",
+      sizeMax: preset.size_max != null ? String(preset.size_max) : "",
+      color: preset.color ?? "",
+    });
+    const zoom = preset.zoom ?? 100;
+    const customLayout = preset.custom_layout ?? {};
+    rows
+      .filter((r) => r.status === "pending")
+      .forEach((r) => updateRow(r.id, { zoom, customLayout }));
+  }
+
   async function handleExport() {
     setExporting(true);
     setExportError(null);
@@ -348,15 +383,7 @@ export function StudioDesignFlow() {
                       </span>
                     </div>
                   )}
-                  {(["modelNumber", "price", "sizes"] as const)
-                    .filter((field) =>
-                      field === "modelNumber"
-                        ? designRow.modelNumber
-                        : field === "price"
-                          ? designRow.price
-                          : designRow.sizeMin || designRow.sizeMax
-                    )
-                    .map((field) => (
+                  {TEXT_FIELDS.filter(isFieldActive).map((field) => (
                       <div
                         key={field}
                         onPointerDown={(e) => beginDrag(field, e)}
@@ -375,6 +402,18 @@ export function StudioDesignFlow() {
             </div>
 
             <div className="space-y-4">
+              <PresetBar
+                mode="studio"
+                disabled={false}
+                currentPrompt={customPrompt}
+                currentLogoId={designRow.logoId || defaultLogoId}
+                currentBurnText={true}
+                currentTemplateId={templateId}
+                currentDefaults={designRow}
+                currentZoom={designRow.zoom}
+                currentCustomLayout={designRow.customLayout}
+                onApply={handlePresetApply}
+              />
               <Select
                 label="תבנית תמונה"
                 value={templateId}
@@ -454,18 +493,10 @@ export function StudioDesignFlow() {
                   burnsPrice={Boolean(templateId)}
                 />
                 <p className="mt-2 text-[10px] text-muted">
-                  ניתן לגרור את הלוגו ואת התוויות (דגם/מחיר/מידות) ישירות על התמונה כדי להזיז אותם.
+                  ניתן לגרור את הלוגו ואת התוויות (דגם/מחיר/מידות/צבע) ישירות על התמונה כדי להזיז אותם.
                 </p>
                 <div className="mt-2 space-y-2">
-                  {(["modelNumber", "price", "sizes"] as const)
-                    .filter((field) =>
-                      field === "modelNumber"
-                        ? designRow.modelNumber
-                        : field === "price"
-                          ? designRow.price
-                          : designRow.sizeMin || designRow.sizeMax
-                    )
-                    .map((field) => (
+                  {TEXT_FIELDS.filter(isFieldActive).map((field) => (
                       <div key={field}>
                         <div className="mb-1 flex items-center justify-between text-[10px] text-muted">
                           <span>גודל {FIELD_LABELS[field]}</span>

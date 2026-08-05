@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
 import type { RowMetadataValues } from "@/components/create/PhotoMetadataFields";
+import type { CustomLayout } from "@/lib/photoTemplate";
 import type { Preset, PhotoMode } from "@/types";
 
 /**
@@ -22,6 +23,8 @@ export function PresetBar({
   currentBurnText,
   currentTemplateId,
   currentDefaults,
+  currentZoom,
+  currentCustomLayout,
   onApply,
 }: {
   mode: PhotoMode;
@@ -32,6 +35,9 @@ export function PresetBar({
   currentBurnText: boolean;
   currentTemplateId: string;
   currentDefaults: Partial<RowMetadataValues>;
+  /** Product-size zoom and the drag/resize layout overrides from the design toolbar — optional, only meaningful for the studio design flow. */
+  currentZoom?: number;
+  currentCustomLayout?: CustomLayout;
   onApply: (preset: Preset) => void;
 }) {
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -70,6 +76,8 @@ export function PresetBar({
           size_min: currentDefaults.sizeMin ? Number(currentDefaults.sizeMin) : null,
           size_max: currentDefaults.sizeMax ? Number(currentDefaults.sizeMax) : null,
           color: currentDefaults.color || null,
+          zoom: currentZoom ?? null,
+          custom_layout: currentCustomLayout ?? null,
         }),
       });
       const data = await res.json();
