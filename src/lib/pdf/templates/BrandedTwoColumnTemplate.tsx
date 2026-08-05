@@ -65,11 +65,13 @@ export const BrandedTwoColumnTemplate: CatalogTemplateComponent = ({
             {pagePhotos.map((photo, i) => (
               <View key={i} style={styles.card}>
                 <Image style={styles.image} src={photo.imageData} />
-                <Text style={styles.line}>{formatModelLine(photo)}</Text>
-                {formatPriceLine(photo) && (
+                {!photo.burnedFields.model && (
+                  <Text style={styles.line}>{formatModelLine(photo)}</Text>
+                )}
+                {!photo.burnedFields.price && formatPriceLine(photo) && (
                   <Text style={styles.line}>{formatPriceLine(photo)}</Text>
                 )}
-                {formatSizeLine(photo) && (
+                {!photo.burnedFields.sizes && formatSizeLine(photo) && (
                   <Text style={styles.line}>{formatSizeLine(photo)}</Text>
                 )}
               </View>

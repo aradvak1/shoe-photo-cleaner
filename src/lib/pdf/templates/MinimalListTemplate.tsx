@@ -47,12 +47,14 @@ export const MinimalListTemplate: CatalogTemplateComponent = ({ catalogName, pho
         <View key={i} style={styles.row}>
           <Image style={styles.thumb} src={photo.imageData} />
           <View style={styles.details}>
-            <Text style={styles.modelLine}>{formatModelLine(photo)}</Text>
+            {!photo.burnedFields.model && (
+              <Text style={styles.modelLine}>{formatModelLine(photo)}</Text>
+            )}
             <View style={{ flexDirection: "row-reverse", gap: 10 }}>
-              {formatPriceLine(photo) && (
+              {!photo.burnedFields.price && formatPriceLine(photo) && (
                 <Text style={styles.line}>{formatPriceLine(photo)}</Text>
               )}
-              {formatSizeLine(photo) && (
+              {!photo.burnedFields.sizes && formatSizeLine(photo) && (
                 <Text style={styles.line}>{formatSizeLine(photo)}</Text>
               )}
             </View>

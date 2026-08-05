@@ -7,6 +7,10 @@ export interface CatalogPhotoEntry {
   logoName: string | null;
   sizeMin: number | null;
   sizeMax: number | null;
+  /** Whether each field is already burned directly onto imageData (studio
+   * template or auto-placement burn) — templates skip a caption line for
+   * a field that's already visible on the photo instead of repeating it. */
+  burnedFields: { model: boolean; price: boolean; sizes: boolean };
 }
 
 export interface CatalogCoverData {

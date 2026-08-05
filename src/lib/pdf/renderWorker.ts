@@ -41,6 +41,7 @@ interface WorkerInput {
     logoName: string | null;
     sizeMin: number | null;
     sizeMax: number | null;
+    burnedFields: { model: boolean; price: boolean; sizes: boolean };
   }>;
   cover: {
     title: string | null;
@@ -80,6 +81,7 @@ async function main() {
     logoName: p.logoName,
     sizeMin: p.sizeMin,
     sizeMax: p.sizeMax,
+    burnedFields: p.burnedFields,
   }));
 
   const cover: CatalogCoverData | undefined = input.cover

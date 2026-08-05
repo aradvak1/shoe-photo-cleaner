@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveTemplate } from "@/lib/photoTemplate";
 import type { CatalogPhotoEntry } from "./templates/types";
 import type { Logo, Photo } from "@/types";
 
@@ -63,7 +64,31 @@ export async function buildCatalogEntries(
         logoName: logo?.name ?? null,
         sizeMin: photo.size_min,
         sizeMax: photo.size_max,
+        burnedFields: await resolveBurnedFields(photo, supabase),
       };
     })
   );
+}
+
+/**
+ * Which fields are already burned onto the photo's own pixels, so the PDF
+ * caption doesn't repeat them as separate text underneath. A template burn
+ * (burnProductTextFromTemplate) only draws the fields the template itself
+ * defines — a logo-only template burns nothing else — so this resolves the
+ * actual template rather than assuming all fields were drawn. Auto-placement
+ * (burnProductText, no template) always burns model number and sizes when
+ * present, but never price — see composite.ts.
+ */
+async function resolveBurnedFields(
+  photo: Photo,
+  supabase: SupabaseClient
+): Promise<CatalogPhotoEntry["burnedFields"]> {
+  if (!photo.burned_text) return { model: false, price: false, sizes: false };
+  if (!photo.template_id) return { model: true, price: false, sizes: true };
+  const template = await resolveTemplate(photo.template_id, supabase);
+  return {
+    model: Boolean(template?.modelNumber),
+    price: Boolean(template?.price),
+    sizes: Boolean(template?.sizes),
+  };
 }

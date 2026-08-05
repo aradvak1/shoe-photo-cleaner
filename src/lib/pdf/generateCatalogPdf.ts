@@ -30,6 +30,7 @@ export async function generateCatalogPdf(
       logoName: p.logoName,
       sizeMin: p.sizeMin,
       sizeMax: p.sizeMax,
+      burnedFields: p.burnedFields,
     })),
     cover: cover
       ? {

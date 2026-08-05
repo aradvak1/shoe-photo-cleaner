@@ -47,9 +47,15 @@ export const LuxuryFeatureTemplate: CatalogTemplateComponent = ({ catalogName, p
     {photos.map((photo, i) => (
       <Page key={i} size="A4" style={styles.page}>
         <Image style={styles.image} src={photo.imageData} />
-        <Text style={styles.modelLine}>{formatModelLine(photo)}</Text>
-        {formatPriceLine(photo) && <Text style={styles.line}>{formatPriceLine(photo)}</Text>}
-        {formatSizeLine(photo) && <Text style={styles.line}>{formatSizeLine(photo)}</Text>}
+        {!photo.burnedFields.model && (
+          <Text style={styles.modelLine}>{formatModelLine(photo)}</Text>
+        )}
+        {!photo.burnedFields.price && formatPriceLine(photo) && (
+          <Text style={styles.line}>{formatPriceLine(photo)}</Text>
+        )}
+        {!photo.burnedFields.sizes && formatSizeLine(photo) && (
+          <Text style={styles.line}>{formatSizeLine(photo)}</Text>
+        )}
       </Page>
     ))}
   </Document>
