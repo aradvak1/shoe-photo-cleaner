@@ -10,6 +10,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
+import { useDbTemplates } from "@/hooks/useDbTemplates";
 import { useImageCreationQueue } from "@/hooks/useImageCreationQueue";
 import { downloadFile } from "@/lib/downloadFile";
 import { PHOTO_TEMPLATES } from "@/lib/photoTemplate";
@@ -60,6 +61,7 @@ export function CreationFlow({
   onSaved?: (batchId: string) => void;
 }) {
   const { logos, setLogos } = useLogos();
+  const { templates: dbTemplates } = useDbTemplates();
   const copy = MODE_COPY[mode];
   const {
     rows,
@@ -285,6 +287,15 @@ export function CreationFlow({
                   {t.label}
                 </option>
               ))}
+              {dbTemplates.length > 0 && (
+                <optgroup label="תבניות שלי">
+                  {dbTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </Select>
           )}
           {!templateId && (
