@@ -130,27 +130,37 @@ export async function POST(request: Request) {
     );
   }
 
-  const pdfBuffer = await generateCatalogPdf(templateId, name, entries, cover);
+  // By this point the catalog + catalog_photos rows already exist. Any
+  // failure from here on (PDF worker crash, storage upload, DB update)
+  // used to crash out or return an error while leaving that row behind
+  // with no pdf_url — an orphaned, permanently-broken catalog cluttering
+  // the list. Clean up on any failure in this block instead.
+  try {
+    const pdfBuffer = await generateCatalogPdf(templateId, name, entries, cover);
 
-  const pdfPath = `${catalog.id}.pdf`;
-  const { error: uploadError } = await supabase.storage
-    .from("catalogs")
-    .upload(pdfPath, pdfBuffer, { contentType: "application/pdf", upsert: true });
-  if (uploadError) {
-    return Response.json({ error: uploadError.message }, { status: 500 });
+    const pdfPath = `${catalog.id}.pdf`;
+    const { error: uploadError } = await supabase.storage
+      .from("catalogs")
+      .upload(pdfPath, pdfBuffer, { contentType: "application/pdf", upsert: true });
+    if (uploadError) throw new Error(uploadError.message);
+
+    const { data: publicUrl } = supabase.storage.from("catalogs").getPublicUrl(pdfPath);
+
+    const { data: updatedCatalog, error: updateError } = await supabase
+      .from("catalogs")
+      .update({ pdf_url: publicUrl.publicUrl })
+      .eq("id", catalog.id)
+      .select()
+      .single();
+    if (updateError) throw new Error(updateError.message);
+
+    return Response.json({ catalog: updatedCatalog }, { status: 201 });
+  } catch (err) {
+    await supabase.from("catalog_photos").delete().eq("catalog_id", catalog.id);
+    await supabase.from("catalogs").delete().eq("id", catalog.id);
+    return Response.json(
+      { error: err instanceof Error ? err.message : "יצירת הקטלוג נכשלה" },
+      { status: 500 }
+    );
   }
-
-  const { data: publicUrl } = supabase.storage.from("catalogs").getPublicUrl(pdfPath);
-
-  const { data: updatedCatalog, error: updateError } = await supabase
-    .from("catalogs")
-    .update({ pdf_url: publicUrl.publicUrl })
-    .eq("id", catalog.id)
-    .select()
-    .single();
-  if (updateError) {
-    return Response.json({ error: updateError.message }, { status: 500 });
-  }
-
-  return Response.json({ catalog: updatedCatalog }, { status: 201 });
 }

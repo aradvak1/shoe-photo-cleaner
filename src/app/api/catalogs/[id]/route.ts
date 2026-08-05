@@ -109,7 +109,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     );
   }
 
-  const pdfBuffer = await generateCatalogPdf(templateId, catalog.name, entries, cover);
+  // Regenerating an existing catalog — its current pdf_url stays valid
+  // untouched if this fails, so (unlike POST's create path) there's
+  // nothing to roll back here, just a clean error instead of crashing
+  // into a bodyless 500.
+  let pdfBuffer: Buffer;
+  try {
+    pdfBuffer = await generateCatalogPdf(templateId, catalog.name, entries, cover);
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof Error ? err.message : "יצירת ה-PDF נכשלה" },
+      { status: 500 }
+    );
+  }
 
   const pdfPath = `${id}.pdf`;
   const { error: uploadError } = await supabase.storage

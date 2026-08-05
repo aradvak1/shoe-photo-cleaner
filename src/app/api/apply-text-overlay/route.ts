@@ -52,8 +52,19 @@ export async function POST(request: Request) {
   const templateId = typeof body.template_id === "string" ? body.template_id : null;
   const zoom = typeof body.zoom === "number" ? body.zoom : null;
   const customLayout = body.custom_layout ?? null;
-  const template = await resolveTemplate(templateId, supabase);
-  const burned = await renderPhoto(imageBuffer, fields, logoUrl, template, zoom, customLayout);
+  // Uncaught here would crash into a bodyless 500 — the client's
+  // burnRow()/saveAll() would then throw a raw JSON-parse SyntaxError
+  // instead of a real message (see useImageCreationQueue.ts).
+  let burned: Buffer;
+  try {
+    const template = await resolveTemplate(templateId, supabase);
+    burned = await renderPhoto(imageBuffer, fields, logoUrl, template, zoom, customLayout);
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof Error ? err.message : "צריבת התמונה נכשלה" },
+      { status: 500 }
+    );
+  }
 
   const { error } = await supabase.storage
     .from(BUCKET)

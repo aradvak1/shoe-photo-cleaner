@@ -141,7 +141,14 @@ export function useImageCreationQueue({
         custom_layout: row.customLayout,
       }),
     });
-    const data = await res.json();
+    let data: { imageUrl?: string; error?: string };
+    try {
+      data = await res.json();
+    } catch {
+      // Non-JSON body (dropped connection, platform-level 502/504) rather
+      // than a real {error} response from our own route.
+      throw new Error("צריבת הטקסט לתמונה נכשלה (בעיית רשת). נסו שוב.");
+    }
     if (!res.ok) throw new Error(data.error || "הוספת הטקסט לתמונה נכשלה");
     return data.imageUrl as string;
   }
@@ -371,7 +378,13 @@ export function useImageCreationQueue({
       // fields aren't filled in yet then. Rows already burned during
       // processing (atmosphere's pick-fields-before-Start flow) are skipped
       // here to avoid burning the text twice.
-      const finalized = await Promise.all(
+      //
+      // allSettled (not all): one flaky burn used to fail the ENTIRE batch
+      // save, even if 20 other photos were fine. A failed row is marked
+      // "error" (same status the generation-retry UI already knows how to
+      // show a retry button for) and simply excluded from this save; the
+      // rest still go through.
+      const settled = await Promise.allSettled(
         readyRows.map(async (r) => {
           if (r.alreadyBurned) return { row: r, imageUrl: r.imageUrl, burned: true };
           if (!burnText) return { row: r, imageUrl: r.imageUrl, burned: false };
@@ -379,6 +392,24 @@ export function useImageCreationQueue({
           return { row: r, imageUrl, burned: true };
         })
       );
+
+      const finalized: { row: CreationRow; imageUrl: string | undefined; burned: boolean }[] = [];
+      let failedCount = 0;
+      settled.forEach((result, i) => {
+        if (result.status === "fulfilled") {
+          finalized.push(result.value);
+          return;
+        }
+        failedCount += 1;
+        updateRow(readyRows[i].id, {
+          status: "error",
+          error: result.reason instanceof Error ? result.reason.message : "צריבת הטקסט לתמונה נכשלה",
+        });
+      });
+
+      if (finalized.length === 0) {
+        throw new Error("כל התמונות נכשלו בצריבת הטקסט — נסו שוב.");
+      }
 
       const res = await fetch("/api/photos", {
         method: "POST",
@@ -406,7 +437,11 @@ export function useImageCreationQueue({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "שמירה נכשלה");
-      setSaveMessage(`נשמרו ${readyRows.length} פריטים בהצלחה.`);
+      setSaveMessage(
+        failedCount > 0
+          ? `נשמרו ${finalized.length} פריטים בהצלחה. ${failedCount} נכשלו בצריבת הטקסט וסומנו לניסיון חוזר.`
+          : `נשמרו ${finalized.length} פריטים בהצלחה.`
+      );
       onSaved?.(batchId);
     } catch (e) {
       setSaveMessage(e instanceof Error ? e.message : "שגיאה לא ידועה");

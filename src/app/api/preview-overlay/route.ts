@@ -49,8 +49,16 @@ export async function POST(request: Request) {
   const templateId = typeof body.template_id === "string" ? body.template_id : null;
   const zoom = typeof body.zoom === "number" ? body.zoom : null;
   const customLayout = body.custom_layout ?? null;
-  const template = await resolveTemplate(templateId, supabase);
-  const rendered = await renderPhoto(imageBuffer, fields, logoUrl, template, zoom, customLayout);
+  let rendered: Buffer;
+  try {
+    const template = await resolveTemplate(templateId, supabase);
+    rendered = await renderPhoto(imageBuffer, fields, logoUrl, template, zoom, customLayout);
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof Error ? err.message : "תצוגה מקדימה נכשלה" },
+      { status: 500 }
+    );
+  }
 
   return new Response(new Uint8Array(rendered), { headers: { "Content-Type": "image/png" } });
 }

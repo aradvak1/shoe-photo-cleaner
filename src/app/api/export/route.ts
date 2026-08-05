@@ -49,13 +49,21 @@ export async function GET(request: Request) {
     ["model_number", "price", "logo", "image_filename", "image_url"].join(","),
   ];
 
-  for (const photo of photos as Photo[]) {
+  // Filenames must be computed in order first (de-duplication via
+  // usedNames depends on processing sequentially), but the actual image
+  // downloads don't depend on each other at all — fetching them one at a
+  // time was pure wasted wall-clock time on a large export. They're
+  // fetched in parallel below and appended back in original order.
+  const items = (photos as Photo[]).map((photo) => {
     const logoName = photo.logo_id ? logoById.get(photo.logo_id)?.name ?? "" : "";
     const base = safeFilenamePart(photo.model_number || photo.id);
     const count = usedNames.get(base) ?? 0;
     usedNames.set(base, count + 1);
     const filename = count === 0 ? `${base}.png` : `${base}_${count + 1}.png`;
+    return { photo, logoName, filename };
+  });
 
+  for (const { photo, logoName, filename } of items) {
     csvRows.push(
       [
         csvEscape(photo.model_number || ""),
@@ -65,13 +73,18 @@ export async function GET(request: Request) {
         csvEscape(photo.image_url),
       ].join(",")
     );
-
-    const imageResponse = await fetch(photo.image_url);
-    if (imageResponse.ok) {
-      const buffer = Buffer.from(await imageResponse.arrayBuffer());
-      archive.append(buffer, { name: `images/${filename}` });
-    }
   }
+
+  const buffers = await Promise.all(
+    items.map(async ({ photo }) => {
+      const imageResponse = await fetch(photo.image_url);
+      return imageResponse.ok ? Buffer.from(await imageResponse.arrayBuffer()) : null;
+    })
+  );
+  items.forEach(({ filename }, i) => {
+    const buffer = buffers[i];
+    if (buffer) archive.append(buffer, { name: `images/${filename}` });
+  });
 
   archive.append(csvRows.join("\n"), { name: "catalog.csv" });
   archive.finalize();

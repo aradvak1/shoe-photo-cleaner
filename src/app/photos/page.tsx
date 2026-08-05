@@ -52,6 +52,7 @@ export default function PhotosPage() {
   const [editZoom, setEditZoom] = useState(100);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   async function handleDelete(photo: Photo) {
@@ -108,17 +109,38 @@ export default function PhotosPage() {
     [logos]
   );
 
-  function load() {
-    const params = new URLSearchParams();
-    if (q.trim()) params.set("q", q.trim());
-    if (mode) params.set("mode", mode);
-    fetch(`/api/photos?${params.toString()}`)
-      .then((res) => res.json())
-      .then((data) => setPhotos(data.photos ?? []))
-      .finally(() => setLoading(false));
-  }
-
-  useEffect(load, [q, mode]);
+  // Debounced (350ms, matching the design toolbar's live-preview pattern)
+  // so typing a model number doesn't fire a request per keystroke, and
+  // guarded against out-of-order responses — without the `cancelled` flag,
+  // a slow response to an older keystroke could land after a newer one and
+  // silently overwrite it with stale results.
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (q.trim()) params.set("q", q.trim());
+      if (mode) params.set("mode", mode);
+      fetch(`/api/photos?${params.toString()}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (cancelled) return;
+          setPhotos(data.photos ?? []);
+          setLoadError(null);
+        })
+        .catch(() => {
+          if (!cancelled) setLoadError("טעינת הגלריה נכשלה. נסו שוב.");
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [q, mode]);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -151,6 +173,8 @@ export default function PhotosPage() {
           <option value="atmosphere">אווירה</option>
         </Select>
       </div>
+
+      {loadError && <p className="text-sm text-danger">{loadError}</p>}
 
       {loading ? (
         <p className="text-sm text-muted">טוען…</p>
