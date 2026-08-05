@@ -75,10 +75,18 @@ export async function GET(request: Request) {
     );
   }
 
+  // A non-OK response is already skipped gracefully below — but fetch()
+  // itself throws on a network-level failure (DNS/connection reset), which
+  // previously rejected this whole Promise.all and crashed the entire
+  // export (losing every other already-fetched photo) over one flaky file.
   const buffers = await Promise.all(
     items.map(async ({ photo }) => {
-      const imageResponse = await fetch(photo.image_url);
-      return imageResponse.ok ? Buffer.from(await imageResponse.arrayBuffer()) : null;
+      try {
+        const imageResponse = await fetch(photo.image_url);
+        return imageResponse.ok ? Buffer.from(await imageResponse.arrayBuffer()) : null;
+      } catch {
+        return null;
+      }
     })
   );
   items.forEach(({ filename }, i) => {
