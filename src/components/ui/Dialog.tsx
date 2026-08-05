@@ -47,13 +47,13 @@ export function Dialog({
             aria-modal="true"
             aria-label={title}
             onClick={(e) => e.stopPropagation()}
-            className={`w-full ${sizeClasses[size]} rounded-lg border border-border bg-surface-raised shadow-card-hover`}
+            className={`flex max-h-[90vh] w-full flex-col ${sizeClasses[size]} rounded-lg border border-border bg-surface-raised shadow-card-hover`}
             initial={{ opacity: 0, scale: 0.96, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
           >
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-4">
               <h2 className="text-sm font-semibold">{title}</h2>
               <button
                 onClick={onClose}
@@ -63,7 +63,12 @@ export function Dialog({
                 ✕
               </button>
             </div>
-            <div className="p-5">{children}</div>
+            {/* Content scrolls independently of the header once it exceeds
+                90vh — without this, a tall dialog (e.g. the per-photo design
+                canvas, with a live preview image plus many controls) simply
+                overflows the fixed-position backdrop with no way to reach
+                whatever's cut off, including action buttons at the bottom. */}
+            <div className="overflow-y-auto p-5">{children}</div>
           </motion.div>
         </motion.div>
       )}

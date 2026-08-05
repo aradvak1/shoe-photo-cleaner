@@ -1,5 +1,5 @@
-import { StudioDesignFlow } from "@/components/create/StudioDesignFlow";
+import { PhotoWorkflow } from "@/components/create/PhotoWorkflow";
 
 export default function StudioCreatePage() {
-  return <StudioDesignFlow />;
+  return <PhotoWorkflow mode="studio" endpoint="/api/process-image" />;
 }

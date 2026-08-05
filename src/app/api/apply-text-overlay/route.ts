@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { renderPhoto } from "@/lib/renderPhoto";
 import { resolveTemplate } from "@/lib/photoTemplate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -19,7 +20,16 @@ export async function POST(request: Request) {
   if (idx === -1) {
     return Response.json({ error: "Unrecognized image_url" }, { status: 400 });
   }
-  const path = imageUrl.slice(idx + marker.length);
+  // Writes to a FRESH path in the same photo's folder rather than
+  // overwriting whatever `image_url` pointed at. A photo can now be
+  // redesigned (different template/fields) any number of times — each
+  // confirmDesign() call always burns from the pristine AI-clean source
+  // (see useImageCreationQueue.ts), never from a previous burn's output,
+  // so overwriting in place would composite the new text onto
+  // already-burned pixels the second time around.
+  const sourcePath = imageUrl.slice(idx + marker.length).split("?")[0];
+  const folder = sourcePath.includes("/") ? sourcePath.slice(0, sourcePath.lastIndexOf("/")) : "";
+  const path = `${folder ? `${folder}/` : ""}designed-${randomUUID()}.png`;
 
   const imageRes = await fetch(imageUrl);
   if (!imageRes.ok) {

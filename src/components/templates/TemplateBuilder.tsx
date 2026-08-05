@@ -5,26 +5,17 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { useDbTemplates } from "@/hooks/useDbTemplates";
+import { useDragResizeLayout, FIELD_LABELS, TEXT_FIELD_KEYS } from "@/hooks/useDragResizeLayout";
+import type { DraggableField, TextFieldKey } from "@/hooks/useDragResizeLayout";
+import { DraggableOverlay } from "@/components/design/DraggableOverlay";
+import { saveTemplate } from "@/lib/templateApi";
 import type { PhotoTemplate, TemplateLogoField, TemplateTextField } from "@/lib/photoTemplate";
-
-type FieldKey = "logo" | "modelNumber" | "price" | "sizes" | "color";
-type TextFieldKey = Exclude<FieldKey, "logo">;
-
-const FIELD_LABELS: Record<FieldKey, string> = {
-  logo: "לוגו",
-  modelNumber: "דגם",
-  price: "מחיר",
-  sizes: "מידות",
-  color: "צבע",
-};
-
-const TEXT_FIELDS: TextFieldKey[] = ["modelNumber", "price", "sizes", "color"];
 
 // Starting point/size for a field the moment it's toggled on — stacked in
 // the bottom-right corner (matching the built-in grazia-donna layout's
 // general shape) so a fresh template already looks reasonable before any
 // dragging happens. Also doubles as the 100% reference for each field's
-// size slider, same role baseTemplate plays in StudioDesignFlow.
+// size slider (see useDragResizeLayout's getReferenceField).
 const DEFAULT_LOGO: TemplateLogoField = {
   leftFraction: 0.08,
   topFraction: 0.08,
@@ -36,6 +27,13 @@ const DEFAULT_TEXT: Record<TextFieldKey, TemplateTextField> = {
   sizes: { centerXFraction: 0.75, centerYFraction: 0.82, fontSizeFraction: 0.042, label: "מידות : " },
   color: { centerXFraction: 0.75, centerYFraction: 0.87, fontSizeFraction: 0.042, label: "צבע : " },
   price: { centerXFraction: 0.75, centerYFraction: 0.92, fontSizeFraction: 0.042, label: "מחיר : " },
+};
+
+const PLACEHOLDER_VALUES: Record<TextFieldKey, string> = {
+  modelNumber: "1234",
+  price: "199",
+  sizes: "36-40",
+  color: "שחור",
 };
 
 const emptyLayout: PhotoTemplate = { id: "draft", label: "" };
@@ -50,7 +48,14 @@ export function TemplateBuilder() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  function toggleField(field: FieldKey) {
+  const { beginDrag, setLogoScale, setFieldScale } = useDragResizeLayout({
+    containerRef: canvasRef,
+    getFieldValue: (field) => layout[field],
+    getReferenceField: (field) => (field === "logo" ? DEFAULT_LOGO : DEFAULT_TEXT[field]),
+    setField: (field, value) => setLayout((prev) => ({ ...prev, [field]: value })),
+  });
+
+  function toggleField(field: DraggableField) {
     setLayout((prev) => {
       const next = { ...prev };
       if (next[field]) {
@@ -63,82 +68,6 @@ export function TemplateBuilder() {
     });
   }
 
-  // Same imperative-attach pattern proven in StudioDesignFlow: the
-  // pointermove/pointerup listeners are wired up directly inside this
-  // pointerdown handler (not a useEffect keyed on drag state), which is
-  // what makes drags land reliably instead of intermittently dropping.
-  function beginDrag(field: FieldKey, e: React.PointerEvent) {
-    if (!canvasRef.current) return;
-    e.preventDefault();
-    const rect = canvasRef.current.getBoundingClientRect();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const rectWidth = rect.width;
-    const rectHeight = rect.height;
-    const base = layout[field];
-    if (!base) return;
-
-    function clamp(value: number, min: number, max: number) {
-      return Math.min(max, Math.max(min, value));
-    }
-    function onMove(ev: PointerEvent) {
-      const dxFrac = (ev.clientX - startX) / rectWidth;
-      const dyFrac = (ev.clientY - startY) / rectHeight;
-      if (field === "logo") {
-        const logoBase = base as TemplateLogoField;
-        const logo = {
-          ...logoBase,
-          leftFraction: clamp(logoBase.leftFraction + dxFrac, 0, 1 - logoBase.widthFraction),
-          topFraction: clamp(logoBase.topFraction + dyFrac, 0, 1 - logoBase.heightFraction),
-        };
-        setLayout((prev) => ({ ...prev, logo }));
-      } else {
-        const fieldBase = base as TemplateTextField;
-        const updated = {
-          ...fieldBase,
-          centerXFraction: clamp(fieldBase.centerXFraction + dxFrac, 0, 1),
-          centerYFraction: clamp(fieldBase.centerYFraction + dyFrac, 0, 1),
-        };
-        setLayout((prev) => ({ ...prev, [field]: updated }));
-      }
-    }
-    function onUp() {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    }
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }
-
-  function setLogoScale(percent: number) {
-    setLayout((prev) => {
-      if (!prev.logo) return prev;
-      const factor = percent / 100;
-      const newWidth = DEFAULT_LOGO.widthFraction * factor;
-      const newHeight = DEFAULT_LOGO.heightFraction * factor;
-      const centerX = prev.logo.leftFraction + prev.logo.widthFraction / 2;
-      const centerY = prev.logo.topFraction + prev.logo.heightFraction / 2;
-      return {
-        ...prev,
-        logo: {
-          leftFraction: centerX - newWidth / 2,
-          topFraction: centerY - newHeight / 2,
-          widthFraction: newWidth,
-          heightFraction: newHeight,
-        },
-      };
-    });
-  }
-
-  function setFieldScale(field: TextFieldKey, percent: number) {
-    setLayout((prev) => {
-      const base = prev[field];
-      if (!base) return prev;
-      const factor = percent / 100;
-      return { ...prev, [field]: { ...base, fontSizeFraction: DEFAULT_TEXT[field].fontSizeFraction * factor } };
-    });
-  }
-
   function resetCanvas() {
     setLayout(emptyLayout);
     setName("");
@@ -146,7 +75,7 @@ export function TemplateBuilder() {
     setSaveError(null);
   }
 
-  async function saveTemplate() {
+  async function handleSave() {
     if (!name.trim()) {
       setSaveError("צריך לתת שם לתבנית");
       return;
@@ -155,20 +84,7 @@ export function TemplateBuilder() {
     setSaveError(null);
     setSaveMessage(null);
     try {
-      const res = await fetch("/api/templates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          logo: layout.logo ?? null,
-          model_number: layout.modelNumber ?? null,
-          price: layout.price ?? null,
-          sizes: layout.sizes ?? null,
-          color: layout.color ?? null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "השמירה נכשלה");
+      await saveTemplate(layout, name.trim());
       setSaveMessage(`התבנית "${name.trim()}" נשמרה`);
       await refresh();
     } catch (e) {
@@ -188,7 +104,7 @@ export function TemplateBuilder() {
     await refresh();
   }
 
-  const activeFields = (["logo", ...TEXT_FIELDS] as FieldKey[]).filter((f) => Boolean(layout[f]));
+  const activeFields = (["logo", ...TEXT_FIELD_KEYS] as DraggableField[]).filter((f) => Boolean(layout[f]));
 
   return (
     <div className="space-y-6">
@@ -206,41 +122,12 @@ export function TemplateBuilder() {
             ref={canvasRef}
             className="relative aspect-square w-full select-none rounded-sm border border-border bg-white"
           >
-            {layout.logo && (
-              <div
-                onPointerDown={(e) => beginDrag("logo", e)}
-                title="גררו כדי להזיז את הלוגו"
-                className="absolute cursor-move rounded-sm border-2 border-dashed border-accent/80 bg-accent/10 hover:bg-accent/20"
-                style={{
-                  left: `${layout.logo.leftFraction * 100}%`,
-                  top: `${layout.logo.topFraction * 100}%`,
-                  width: `${layout.logo.widthFraction * 100}%`,
-                  height: `${layout.logo.heightFraction * 100}%`,
-                }}
-              >
-                <span className="absolute -top-5 right-0 rounded-sm bg-accent px-1.5 py-0.5 text-[10px] text-[#1c1108]">
-                  לוגו
-                </span>
-              </div>
-            )}
-            {TEXT_FIELDS.filter((f) => layout[f]).map((field) => {
-              const value = layout[field]!;
-              return (
-                <div
-                  key={field}
-                  onPointerDown={(e) => beginDrag(field, e)}
-                  title="גררו כדי להזיז"
-                  className="absolute -translate-x-1/2 -translate-y-1/2 cursor-move rounded-full border border-accent bg-ink/80 px-2 py-0.5 text-[10px] whitespace-nowrap text-white hover:bg-ink"
-                  style={{
-                    left: `${value.centerXFraction * 100}%`,
-                    top: `${value.centerYFraction * 100}%`,
-                  }}
-                >
-                  {value.label}
-                  {field === "modelNumber" ? "1234" : field === "price" ? "199" : field === "sizes" ? "36-40" : "שחור"}
-                </div>
-              );
-            })}
+            <DraggableOverlay
+              logo={layout.logo}
+              textFields={layout}
+              onBeginDrag={beginDrag}
+              textFieldContent={(field, value) => `${value.label}${PLACEHOLDER_VALUES[field]}`}
+            />
             {activeFields.length === 0 && (
               <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">
                 בחרו שדה מהצד כדי להתחיל
@@ -252,7 +139,7 @@ export function TemplateBuilder() {
             <div>
               <p className="mb-2 text-xs font-medium text-muted">שדות בתבנית</p>
               <div className="flex flex-wrap gap-2">
-                {(["logo", ...TEXT_FIELDS] as FieldKey[]).map((field) => (
+                {(["logo", ...TEXT_FIELD_KEYS] as DraggableField[]).map((field) => (
                   <Button
                     key={field}
                     type="button"
@@ -284,7 +171,7 @@ export function TemplateBuilder() {
               </div>
             )}
 
-            {TEXT_FIELDS.filter((f) => layout[f]).map((field) => {
+            {TEXT_FIELD_KEYS.filter((f) => layout[f]).map((field) => {
               const current = layout[field]!.fontSizeFraction;
               const base = DEFAULT_TEXT[field].fontSizeFraction;
               return (
@@ -314,7 +201,7 @@ export function TemplateBuilder() {
                 onChange={(e) => setName(e.target.value)}
               />
               <div className="flex flex-wrap gap-3">
-                <Button onClick={saveTemplate} disabled={saving || activeFields.length === 0}>
+                <Button onClick={handleSave} disabled={saving || activeFields.length === 0}>
                   {saving ? "שומר…" : "שמירת תבנית"}
                 </Button>
                 <Button variant="secondary" onClick={resetCanvas}>

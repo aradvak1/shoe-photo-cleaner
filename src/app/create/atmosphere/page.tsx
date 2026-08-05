@@ -1,5 +1,5 @@
-import { CreationFlow } from "@/components/create/CreationFlow";
+import { PhotoWorkflow } from "@/components/create/PhotoWorkflow";
 
 export default function AtmosphereCreatePage() {
-  return <CreationFlow mode="atmosphere" endpoint="/api/process-atmosphere" />;
+  return <PhotoWorkflow mode="atmosphere" endpoint="/api/process-atmosphere" />;
 }

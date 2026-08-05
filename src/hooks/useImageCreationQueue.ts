@@ -26,21 +26,19 @@ export interface CreationRow {
   sizeMin: string;
   sizeMax: string;
   color: string;
-  /** Text was already burned onto the image during processing (atmosphere's pick-fields-before-Start flow) — saveAll must not burn it a second time. */
-  alreadyBurned?: boolean;
+  /** Which template (built-in or saved) this specific photo's design uses — per-row, not shared across the batch, since a batch can hold several different products. */
+  templateId: string;
   /** Product size within the frame, as a percent (100 = untouched). >100 crops tighter/fills more of the frame; <100 shows more background. */
   zoom: number;
   /** Drag-positioned/resized overrides for the logo and/or text fields, from the design toolbar — merged on top of the base template's fractions. */
   customLayout: CustomLayout;
+  /** True once this row's per-photo design (template/fields/positions) has been confirmed and burned — distinct from `status === "done"`, which only means the AI step finished. Only designed rows are eligible for saveAll. */
+  designed: boolean;
+  /** The burned output from confirmDesign(), kept separate from `imageUrl` — `imageUrl` always stays the pristine AI-clean source so a row can be redesigned (different template, different fields) any number of times without re-running AI or compositing onto already-burned pixels. */
+  designedImageUrl?: string;
 }
 
 const CONCURRENCY = 3;
-
-function hasBurnableFields(row: CreationRow): boolean {
-  return Boolean(
-    row.modelNumber || row.sku || row.sizeMin || row.sizeMax || row.color || row.logoId
-  );
-}
 
 interface SampleGenerated {
   imageUrl: string;
@@ -78,8 +76,6 @@ export function useImageCreationQueue({
   const [rows, setRows] = useState<CreationRow[]>([]);
   const [batchId] = useState(() => crypto.randomUUID());
   const [customPrompt, setCustomPrompt] = useState(initialPrompt);
-  const [burnText, setBurnText] = useState(false);
-  const [templateId, setTemplateId] = useState("");
   const [defaults, setDefaultsState] = useState<Partial<RowMetadataValues>>({});
   const [started, setStarted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -114,8 +110,9 @@ export function useImageCreationQueue({
     () => rows.filter((r) => r.status === "done" || r.status === "error").length,
     [rows]
   );
+  /** Ready to SAVE — AI finished AND this photo's own design was confirmed. A row that's merely AI-done still needs a trip through Stage B before it counts here. */
   const readyCount = useMemo(
-    () => rows.filter((r) => r.status === "done").length,
+    () => rows.filter((r) => r.status === "done" && r.designed).length,
     [rows]
   );
 
@@ -136,7 +133,7 @@ export function useImageCreationQueue({
         sizeMax: row.sizeMax ? Number(row.sizeMax) : null,
         color: row.color || null,
         logo_id: row.logoId || null,
-        template_id: templateId || null,
+        template_id: row.templateId || null,
         zoom: row.zoom,
         custom_layout: row.customLayout,
       }),
@@ -196,24 +193,18 @@ export function useImageCreationQueue({
     throw new Error("שגיאה לא ידועה");
   }
 
+  /**
+   * Marks a row's AI generation as finished — nothing more. No burning
+   * happens here: text/logo placement is now an explicit per-photo Stage B
+   * step (confirmDesign), completely decoupled from AI generation, so a
+   * batch of different products never has one row's fields leak onto
+   * another's before the user has even seen it.
+   */
   async function finalizeRow(row: CreationRow, generated: SampleGenerated) {
-    let imageUrl = generated.imageUrl;
-    let alreadyBurned = false;
-
-    // Fields (and now zoom/template, via the design toolbar) are chosen
-    // before generation even starts, in both modes — so bake them in
-    // immediately once the AI result comes back: one "אישור" click produces
-    // one finished image, no separate later save/burn step.
-    if (hasBurnableFields(row)) {
-      imageUrl = await burnRow({ ...row, imageUrl });
-      alreadyBurned = true;
-    }
-
     updateRow(row.id, {
       status: "done",
-      imageUrl,
+      imageUrl: generated.imageUrl,
       originalUrl: generated.originalUrl,
-      alreadyBurned,
     });
   }
 
@@ -235,6 +226,30 @@ export function useImageCreationQueue({
     const row = rows.find((r) => r.id === rowId);
     if (!row) return;
     await processRow(row, customPrompt);
+  }
+
+  /**
+   * Stage B's "confirm" action for one photo: burns its currently-set
+   * template/fields/customLayout onto the pristine AI-clean `imageUrl` and
+   * marks the row designed. Always burns from `row.imageUrl` (never from a
+   * previous `designedImageUrl`), and apply-text-overlay writes each burn
+   * to a fresh storage path rather than overwriting the source — so this
+   * can be called again after changing the template/fields, any number of
+   * times, without double-burning or re-running AI. Throws on failure; the
+   * caller (the design dialog) owns its own loading/error UI around this.
+   *
+   * `overrides` lets a caller apply a just-computed patch (e.g. a
+   * freshly-saved template's id) and burn with it in one atomic call —
+   * calling updateRow() then immediately confirmDesign() separately would
+   * risk confirmDesign reading this hook's `rows` closure before the
+   * updateRow's state change has actually landed.
+   */
+  async function confirmDesign(rowId: string, overrides?: Partial<CreationRow>) {
+    const row = rows.find((r) => r.id === rowId);
+    if (!row) return;
+    const effectiveRow = overrides ? { ...row, ...overrides } : row;
+    const designedImageUrl = await burnRow(effectiveRow);
+    updateRow(rowId, { ...overrides, designed: true, designedImageUrl });
   }
 
   const [sample, setSample] = useState<SampleState>({ phase: "idle" });
@@ -261,10 +276,11 @@ export function useImageCreationQueue({
   }
 
   /**
-   * Locks in the current prompt as "correct" for the whole batch: finalizes
-   * the approved sample row (burning its fields like any other row) and
-   * fires off every other still-pending row with the exact same prompt —
-   * this is what actually keeps a 20-photo batch visually on one line.
+   * Locks in the current prompt as the approved AI style: finalizes the
+   * sample row (AI-clean only, no fields/burning involved) and fires off
+   * every other still-pending row with the exact same style prompt — this
+   * is what actually keeps a batch visually consistent. Per-photo fields/
+   * template/positioning happen later, per row, in Stage B.
    */
   async function approveSample() {
     if (sample.phase !== "awaiting-approval" || !sample.rowId || !sample.generated) return;
@@ -320,8 +336,10 @@ export function useImageCreationQueue({
       sizeMin: defaults.sizeMin ?? "",
       sizeMax: defaults.sizeMax ?? "",
       color: defaults.color ?? "",
+      templateId: "",
       zoom: 100,
       customLayout: {},
+      designed: false,
     }));
     setRows((prev) => [...prev, ...newRows]);
 
@@ -366,57 +384,24 @@ export function useImageCreationQueue({
     await generateSample(pending[0], customPrompt);
   }
 
+  /**
+   * Persists every row whose design was already confirmed (burned) in
+   * Stage B — burning no longer happens here at all, since it's now an
+   * explicit per-photo action (confirmDesign) that already ran before a
+   * row could ever reach readyCount/this filter.
+   */
   async function saveAll() {
-    const readyRows = rows.filter((r) => r.status === "done");
+    const readyRows = rows.filter((r) => r.status === "done" && r.designed);
     if (readyRows.length === 0) return;
     setSaving(true);
     setSaveMessage(null);
     try {
-      // When burning text is on, apply it now (using the field values as
-      // typed in by this point) and swap in the labeled image's URL before
-      // saving — this can't happen at initial processing time since the
-      // fields aren't filled in yet then. Rows already burned during
-      // processing (atmosphere's pick-fields-before-Start flow) are skipped
-      // here to avoid burning the text twice.
-      //
-      // allSettled (not all): one flaky burn used to fail the ENTIRE batch
-      // save, even if 20 other photos were fine. A failed row is marked
-      // "error" (same status the generation-retry UI already knows how to
-      // show a retry button for) and simply excluded from this save; the
-      // rest still go through.
-      const settled = await Promise.allSettled(
-        readyRows.map(async (r) => {
-          if (r.alreadyBurned) return { row: r, imageUrl: r.imageUrl, burned: true };
-          if (!burnText) return { row: r, imageUrl: r.imageUrl, burned: false };
-          const imageUrl = await burnRow(r);
-          return { row: r, imageUrl, burned: true };
-        })
-      );
-
-      const finalized: { row: CreationRow; imageUrl: string | undefined; burned: boolean }[] = [];
-      let failedCount = 0;
-      settled.forEach((result, i) => {
-        if (result.status === "fulfilled") {
-          finalized.push(result.value);
-          return;
-        }
-        failedCount += 1;
-        updateRow(readyRows[i].id, {
-          status: "error",
-          error: result.reason instanceof Error ? result.reason.message : "צריבת הטקסט לתמונה נכשלה",
-        });
-      });
-
-      if (finalized.length === 0) {
-        throw new Error("כל התמונות נכשלו בצריבת הטקסט — נסו שוב.");
-      }
-
       const res = await fetch("/api/photos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
-          finalized.map(({ row: r, imageUrl, burned }) => ({
-            image_url: imageUrl,
+          readyRows.map((r) => ({
+            image_url: r.designedImageUrl ?? r.imageUrl,
             original_url: r.originalUrl,
             model_number: r.modelNumber || null,
             sku: r.sku || null,
@@ -428,20 +413,16 @@ export function useImageCreationQueue({
             color: r.color || null,
             custom_prompt: customPrompt.trim() || null,
             mode,
-            burned_text: burned,
-            template_id: burned ? templateId || null : null,
+            burned_text: true,
+            template_id: r.templateId || null,
             zoom: r.zoom,
-            custom_layout: burned ? r.customLayout : null,
+            custom_layout: r.customLayout,
           }))
         ),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "שמירה נכשלה");
-      setSaveMessage(
-        failedCount > 0
-          ? `נשמרו ${finalized.length} פריטים בהצלחה. ${failedCount} נכשלו בצריבת הטקסט וסומנו לניסיון חוזר.`
-          : `נשמרו ${finalized.length} פריטים בהצלחה.`
-      );
+      setSaveMessage(`נשמרו ${readyRows.length} פריטים בהצלחה.`);
       onSaved?.(batchId);
     } catch (e) {
       setSaveMessage(e instanceof Error ? e.message : "שגיאה לא ידועה");
@@ -463,10 +444,6 @@ export function useImageCreationQueue({
     readyCount,
     customPrompt,
     setCustomPrompt,
-    burnText,
-    setBurnText,
-    templateId,
-    setTemplateId,
     defaults,
     applyDefaults,
     defaultLogoId: defaults.logoId ?? "",
@@ -477,5 +454,6 @@ export function useImageCreationQueue({
     approveSample,
     rejectSample,
     retryRow,
+    confirmDesign,
   };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/Button";
-import { CreationFlow } from "@/components/create/CreationFlow";
+import { PhotoWorkflow } from "@/components/create/PhotoWorkflow";
 import { CATALOG_STYLE_CATEGORIES } from "@/lib/catalogLooks";
 import type { CatalogStyleCategory, PhotoMode } from "@/types";
 
@@ -28,13 +28,13 @@ export function PhotosStep({
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted">
           גררו את כל תמונות הנעליים לעריכה יחד — כולן ייצרו באותו סגנון שנבחר בשלב הקודם, אחרי אישור דוגמה
-          אחת.
+          אחת. לאחר מכן תוכלו לעצב כל תמונה בנפרד.
         </p>
         <Button variant="ghost" size="sm" onClick={onBack}>
           חזרה לבחירת סגנון
         </Button>
       </div>
-      <CreationFlow
+      <PhotoWorkflow
         mode={mode}
         endpoint={categoryMeta.endpoint}
         initialPrompt={resolvedPrompt}
