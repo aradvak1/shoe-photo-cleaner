@@ -22,8 +22,16 @@ const OUTPUT_SIZE = 1080;
 // as inline image data (the model can already see the product), but an
 // explicit fidelity instruction measurably reduces drift on hardware
 // details (buckles, studs, stitching) versus relying on the image alone.
+// Shape/color/material/hardware are a hard fidelity constraint (this is a
+// specific item being sold — buyers must recognize exactly what they're
+// getting), but lighting/shine/reflections on the product itself are
+// explicitly allowed to change: the seller-reported failure mode was
+// inconsistent output quality where the model sometimes polished the
+// product's own lighting nicely and sometimes left it exactly as
+// photographed, looking flat/unedited — permitting (rather than forbidding)
+// that polish is meant to make the *good* outcome the consistent one.
 const PRESERVE_PRODUCT_INSTRUCTION =
-  "The product shown in the attached photo is the exact item being sold. Preserve its exact shape, color, material, texture, and every hardware detail (buckles, studs, stitching, logos) with complete fidelity — do not redesign, simplify, or alter it in any way. Only change the surrounding background/scene as described below.";
+  "The product shown in the attached photo is the exact item being sold — never change its shape, proportions, color, material, texture, or any hardware detail (buckles, studs, stitching, logos); these must stay perfectly recognizable and unchanged from the reference photo. Within that constraint, you should enhance the product's own lighting, highlights, reflections, and material sheen for a polished, professional commercial-photography look — this is expected and encouraged, not just the background. Also change the surrounding background/scene as described below.";
 
 const QUALITY_SUFFIX =
   "Photorealistic, high-end commercial product photography, DSLR quality, shallow depth of field, ultra high detail, no text, no watermark, no logo overlay.";
@@ -111,7 +119,14 @@ export async function editWithBackgroundPrompt(
   mimeType: string,
   prompt?: string
 ): Promise<Buffer> {
-  const promptText = `${PRESERVE_PRODUCT_INSTRUCTION} Background: ${prompt || DEFAULT_STUDIO_PROMPT}. ${QUALITY_SUFFIX}`;
+  // A seller's custom direction layers ON TOP of the tuned default rather
+  // than replacing it — otherwise a short request like "more shadow" would
+  // also silently drop the studio-lighting/backdrop tuning that request
+  // never meant to touch.
+  const backgroundText = prompt
+    ? `${DEFAULT_STUDIO_PROMPT}. Additional direction from the seller: ${prompt}`
+    : DEFAULT_STUDIO_PROMPT;
+  const promptText = `${PRESERVE_PRODUCT_INSTRUCTION} Background: ${backgroundText}. ${QUALITY_SUFFIX}`;
   return callGeminiGenerate(fileBuffer, mimeType, promptText);
 }
 
@@ -131,6 +146,9 @@ export async function generateAtmosphereImage(
   mimeType: string,
   options: VirtualModelOptions = {}
 ): Promise<Buffer> {
-  const promptText = `${PRESERVE_PRODUCT_INSTRUCTION} Scene: ${options.prompt || DEFAULT_ATMOSPHERE_PROMPT}. ${QUALITY_SUFFIX} ${ATMOSPHERE_STYLE_SUFFIX}`;
+  const sceneText = options.prompt
+    ? `${DEFAULT_ATMOSPHERE_PROMPT}. Additional direction from the seller: ${options.prompt}`
+    : DEFAULT_ATMOSPHERE_PROMPT;
+  const promptText = `${PRESERVE_PRODUCT_INSTRUCTION} Scene: ${sceneText}. ${QUALITY_SUFFIX} ${ATMOSPHERE_STYLE_SUFFIX}`;
   return callGeminiGenerate(fileBuffer, mimeType, promptText);
 }

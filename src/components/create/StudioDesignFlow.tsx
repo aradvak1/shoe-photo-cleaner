@@ -540,8 +540,8 @@ export function StudioDesignFlow() {
 
               <Textarea
                 label="כיוון ל-AI (לא חובה)"
-                caption="אם משאירים ריק, נשתמש בברירת המחדל."
-                placeholder='לדוגמה: "רקע בז׳ חמים במקום לבן אחיד"'
+                caption="ההנחיה מתווספת לעיצוב הקבוע (רקע/תאורה), לא מחליפה אותו — אפשר גם לבקש שינוי על הנעל עצמה, כמו יותר צל או ברק."
+                placeholder='לדוגמה: "יותר צל מתחת לנעל" או "רקע בז׳ חמים יותר"'
                 value={customPrompt}
                 onChange={(e) => setCustomPrompt(e.target.value)}
                 rows={2}

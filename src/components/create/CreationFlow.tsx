@@ -26,6 +26,7 @@ const MODE_COPY: Record<
     description: string;
     dropLabel: string;
     promptLabel: string;
+    promptCaption: string;
     promptPlaceholder: string;
   }
 > = {
@@ -35,7 +36,9 @@ const MODE_COPY: Record<
       "גררו תמונה, בחרו אילו פרטים (דגם, מק״ט, מידות, צבע, לוגו) יופיעו עליה, ולחצו על \"התחל\" — הכל ייכנס לתמונה אחת מוכנה.",
     dropLabel: "גררו תמונות נעליים לניקוי",
     promptLabel: "כיוון ל-AI (לא חובה)",
-    promptPlaceholder: 'לדוגמה: "רקע בז\' חמים במקום לבן אחיד"',
+    promptCaption:
+      "ההנחיה מתווספת לעיצוב הקבוע (רקע/תאורה), לא מחליפה אותו — אפשר גם לבקש שינוי על הנעל עצמה, כמו יותר צל או ברק.",
+    promptPlaceholder: 'לדוגמה: "יותר צל מתחת לנעל" או "רקע בז\' חמים יותר"',
   },
   atmosphere: {
     title: "תמונת אווירה",
@@ -43,6 +46,7 @@ const MODE_COPY: Record<
       "גררו תמונה, בחרו אילו פרטים (דגם, מק״ט, מידות, צבע, לוגו) יופיעו עליה, ולחצו על \"התחל\" — הכל ייכנס לתמונה אחת מוכנה.",
     dropLabel: "גררו תמונות נעליים ליצירת תמונת אווירה",
     promptLabel: "תיאור הסצנה (לא חובה)",
+    promptCaption: "ההנחיה מתווספת לתיאור הקבוע של הסצנה, לא מחליפה אותו.",
     promptPlaceholder: 'לדוגמה: "דוגמנית הולכת ברחוב אורבני בשקיעה"',
   },
 };
@@ -254,7 +258,7 @@ export function CreationFlow({
           />
           <Textarea
             label={copy.promptLabel}
-            caption="אם משאירים ריק, נשתמש בברירת המחדל. אם ממלאים — נלך לפי הבקשה שלכם."
+            caption={copy.promptCaption}
             placeholder={copy.promptPlaceholder}
             value={customPrompt}
             onChange={(e) => setCustomPrompt(e.target.value)}
