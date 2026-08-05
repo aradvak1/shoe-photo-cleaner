@@ -45,10 +45,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const mimeType = mimeTypeFromUrl(photo.original_url);
 
   const prompt = typeof body.prompt === "string" ? body.prompt : (photo.custom_prompt ?? undefined);
-  const cleanImage =
-    photo.mode === "atmosphere"
-      ? await generateAtmosphereImage(originalBuffer, "original", mimeType, { prompt })
-      : await editWithBackgroundPrompt(originalBuffer, "original", mimeType, prompt);
+  let cleanImage: Buffer;
+  try {
+    cleanImage =
+      photo.mode === "atmosphere"
+        ? await generateAtmosphereImage(originalBuffer, "original", mimeType, { prompt })
+        : await editWithBackgroundPrompt(originalBuffer, "original", mimeType, prompt);
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof Error ? err.message : "עיבוד ה-AI נכשל" },
+      { status: 500 }
+    );
+  }
 
   const templateId: string | null =
     typeof body.template_id === "string" ? body.template_id : (photo.template_id ?? null);

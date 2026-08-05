@@ -30,19 +30,36 @@ export async function POST(request: Request) {
 
   const supabase = getSupabaseAdmin();
 
-  const [cleanImage, originalUpload] = await Promise.all([
-    editWithBackgroundPrompt(originalBuffer, file.name, mimeType, customPrompt),
-    supabase.storage
-      .from("originals")
-      .upload(originalPath, originalBuffer, {
-        contentType: mimeType,
-        upsert: false,
-      }),
-  ]);
-
-  if (originalUpload.error) {
+  // A Gemini failure (quota/billing, safety block, bad key) previously
+  // threw uncaught here, which Next turns into a bare 500 with no JSON
+  // body — the client's res.json() then fails to parse, and that gets
+  // misread as a dropped connection ("network overload, try again"),
+  // hiding the real cause and wasting 3 pointless retries. Catching it
+  // here surfaces the actual error message instead.
+  let cleanImage: Buffer;
+  let originalUploadError: string | null;
+  try {
+    const [ci, ou] = await Promise.all([
+      editWithBackgroundPrompt(originalBuffer, file.name, mimeType, customPrompt),
+      supabase.storage
+        .from("originals")
+        .upload(originalPath, originalBuffer, {
+          contentType: mimeType,
+          upsert: false,
+        }),
+    ]);
+    cleanImage = ci;
+    originalUploadError = ou.error?.message ?? null;
+  } catch (err) {
     return Response.json(
-      { error: `Failed to store original: ${originalUpload.error.message}` },
+      { error: err instanceof Error ? err.message : "עיבוד ה-AI נכשל" },
+      { status: 500 }
+    );
+  }
+
+  if (originalUploadError) {
+    return Response.json(
+      { error: `Failed to store original: ${originalUploadError}` },
       { status: 500 }
     );
   }

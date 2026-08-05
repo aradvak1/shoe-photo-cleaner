@@ -30,21 +30,36 @@ export async function POST(request: Request) {
 
   const supabase = getSupabaseAdmin();
 
-  const [cleanImage, originalUpload] = await Promise.all([
-    generateAtmosphereImage(originalBuffer, file.name, mimeType, {
-      prompt: customPrompt || undefined,
-    }),
-    supabase.storage
-      .from("originals")
-      .upload(originalPath, originalBuffer, {
-        contentType: mimeType,
-        upsert: false,
+  // See process-image/route.ts for why this must be caught: an uncaught
+  // Gemini failure here produces a bare, bodyless 500 that the client's
+  // res.json() can't parse — that gets misread as a dropped connection
+  // ("network overload") instead of surfacing the real error.
+  let cleanImage: Buffer;
+  let originalUploadError: string | null;
+  try {
+    const [ci, ou] = await Promise.all([
+      generateAtmosphereImage(originalBuffer, file.name, mimeType, {
+        prompt: customPrompt || undefined,
       }),
-  ]);
-
-  if (originalUpload.error) {
+      supabase.storage
+        .from("originals")
+        .upload(originalPath, originalBuffer, {
+          contentType: mimeType,
+          upsert: false,
+        }),
+    ]);
+    cleanImage = ci;
+    originalUploadError = ou.error?.message ?? null;
+  } catch (err) {
     return Response.json(
-      { error: `Failed to store original: ${originalUpload.error.message}` },
+      { error: err instanceof Error ? err.message : "עיבוד ה-AI נכשל" },
+      { status: 500 }
+    );
+  }
+
+  if (originalUploadError) {
+    return Response.json(
+      { error: `Failed to store original: ${originalUploadError}` },
       { status: 500 }
     );
   }

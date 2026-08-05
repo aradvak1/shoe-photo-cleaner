@@ -89,6 +89,15 @@ async function callGeminiGenerate(
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
+    // 429 covers both rate limiting and the monthly spend cap — the
+    // spend-cap message is worth surfacing in plain Hebrew directly, since
+    // it's a one-time account fix (not a "try again" situation) and the
+    // raw API response is an English JSON blob that doesn't make that clear.
+    if (response.status === 429 && detail.includes("spending cap")) {
+      throw new Error(
+        "חריגה ממכסת ההוצאה החודשית של Google Gemini — יש להיכנס ל-Google AI Studio (ai.studio/spend) ולהעלות את התקרה כדי שיצירת התמונות תמשיך לעבוד."
+      );
+    }
     throw new Error(`Gemini API error (${response.status}): ${detail || response.statusText}`);
   }
 
