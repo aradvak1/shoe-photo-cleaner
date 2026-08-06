@@ -45,6 +45,19 @@ const PRESERVE_PRODUCT_INSTRUCTION =
 const QUALITY_SUFFIX =
   "Photorealistic, high-end commercial product photography, DSLR quality, shallow depth of field, ultra high detail, no text, no watermark, no logo overlay.";
 
+/**
+ * Attached as a second reference image (see extraReferenceImages) for every
+ * photo after the first in a batch, so the whole batch visually matches one
+ * already-approved result instead of each independent Gemini call
+ * reinterpreting the same TEXT description differently (seller-reported
+ * failure mode on 2026-08-06: some photos in a batch came out on a white
+ * background, others on beige, despite sharing one prompt — a purely
+ * text-described background gives the model nothing to match pixel-for-
+ * pixel, only a word to reinterpret call by call).
+ */
+const STYLE_REFERENCE_INSTRUCTION =
+  " A second reference image is also attached, showing a different product already edited in the exact background and lighting style this whole batch must share — match that reference's background color, gradient, lighting direction, and shadow style as closely as possible, so every photo in the batch looks like part of one consistent set. That second image is a style reference only: never include its product, or any part of it, in your output — only the product from the first attached image should appear.";
+
 const DEFAULT_STUDIO_PROMPT =
   "a smooth seamless studio backdrop in warm neutral beige and cream tones with a subtle soft gradient, professional softbox lighting from the upper left, soft realistic contact shadow directly beneath the product grounding it on the surface, gentle warm rim light on the edges";
 
@@ -170,6 +183,11 @@ async function callGeminiGenerate(
   }
 }
 
+export interface StyleReference {
+  buffer: Buffer;
+  mimeType: string;
+}
+
 /**
  * Studio mode: AI-generates the background, returning a fully composited
  * PNG (same contract as the Photoroom implementation it replaced).
@@ -178,7 +196,8 @@ export async function editWithBackgroundPrompt(
   fileBuffer: Buffer,
   _filename: string,
   mimeType: string,
-  prompt?: string
+  prompt?: string,
+  styleReference?: StyleReference
 ): Promise<Buffer> {
   // A seller's custom direction layers ON TOP of the tuned default rather
   // than replacing it — otherwise a short request like "more shadow" would
@@ -187,13 +206,19 @@ export async function editWithBackgroundPrompt(
   const backgroundText = prompt
     ? `${DEFAULT_STUDIO_PROMPT}. Additional direction from the seller: ${prompt}`
     : DEFAULT_STUDIO_PROMPT;
-  const promptText = `${PRESERVE_PRODUCT_INSTRUCTION} Background: ${backgroundText}. ${QUALITY_SUFFIX}`;
-  return callGeminiGenerate(fileBuffer, mimeType, promptText);
+  const promptText = `${PRESERVE_PRODUCT_INSTRUCTION} Background: ${backgroundText}. ${QUALITY_SUFFIX}${styleReference ? STYLE_REFERENCE_INSTRUCTION : ""}`;
+  return callGeminiGenerate(
+    fileBuffer,
+    mimeType,
+    promptText,
+    styleReference ? [{ buffer: styleReference.buffer, mimeType: styleReference.mimeType }] : []
+  );
 }
 
 export interface VirtualModelOptions {
   /** Free-text scene/model description; falls back to DEFAULT_ATMOSPHERE_PROMPT when omitted. */
   prompt?: string;
+  styleReference?: StyleReference;
 }
 
 /**
@@ -210,6 +235,13 @@ export async function generateAtmosphereImage(
   const sceneText = options.prompt
     ? `${DEFAULT_ATMOSPHERE_PROMPT}. Additional direction from the seller: ${options.prompt}`
     : DEFAULT_ATMOSPHERE_PROMPT;
-  const promptText = `${PRESERVE_PRODUCT_INSTRUCTION} Scene: ${sceneText}. ${QUALITY_SUFFIX} ${ATMOSPHERE_STYLE_SUFFIX}`;
-  return callGeminiGenerate(fileBuffer, mimeType, promptText);
+  const promptText = `${PRESERVE_PRODUCT_INSTRUCTION} Scene: ${sceneText}. ${QUALITY_SUFFIX} ${ATMOSPHERE_STYLE_SUFFIX}${options.styleReference ? STYLE_REFERENCE_INSTRUCTION : ""}`;
+  return callGeminiGenerate(
+    fileBuffer,
+    mimeType,
+    promptText,
+    options.styleReference
+      ? [{ buffer: options.styleReference.buffer, mimeType: options.styleReference.mimeType }]
+      : []
+  );
 }

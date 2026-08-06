@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { PhotoMode } from "@/types";
 import type { RowMetadataValues } from "@/components/create/PhotoMetadataFields";
 import { resizeImageFile } from "@/lib/resizeImage";
@@ -80,6 +80,15 @@ export function useImageCreationQueue({
   const [started, setStarted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  /** The approved sample's image URL, sent along with every later generation
+   * in this batch (initial fill-in, retries, and regenerateRows) as a style
+   * reference — see gemini.ts's STYLE_REFERENCE_INSTRUCTION for why a shared
+   * TEXT prompt alone let independent Gemini calls drift onto different
+   * backgrounds within the same batch. A ref, not state: approveSample sets
+   * it and synchronously calls processRows in the same tick, which needs
+   * generateRow to see the new value immediately — a state setter's update
+   * wouldn't be visible in that same tick's closures. */
+  const styleReferenceUrlRef = useRef<string | undefined>(undefined);
 
   // Applying defaults (a picked default logo, or an applied preset) also
   // backfills any existing row whose corresponding field is still empty —
@@ -165,6 +174,9 @@ export function useImageCreationQueue({
         const formData = new FormData();
         formData.append("image", uploadFile);
         if (prompt.trim()) formData.append("prompt", prompt.trim());
+        if (styleReferenceUrlRef.current) {
+          formData.append("style_reference_url", styleReferenceUrlRef.current);
+        }
         res = await fetch(endpoint, { method: "POST", body: formData });
       } catch {
         if (attempt === GENERATE_MAX_ATTEMPTS) {
@@ -310,12 +322,18 @@ export function useImageCreationQueue({
    * every other still-pending row with the exact same style prompt — this
    * is what actually keeps a batch visually consistent. Per-photo fields/
    * template/positioning happen later, per row, in Stage B.
+   *
+   * Also records the sample's own image as styleReferenceUrl, sent along
+   * with every one of those calls (and any later retry/regenerate) as a
+   * visual anchor — the text prompt alone isn't enough for independent
+   * Gemini calls to land on the same exact background (see generateRow).
    */
   async function approveSample() {
     if (sample.phase !== "awaiting-approval" || !sample.rowId || !sample.generated) return;
     const row = rows.find((r) => r.id === sample.rowId);
     const generated = sample.generated;
     setSample({ phase: "approved" });
+    styleReferenceUrlRef.current = generated.imageUrl;
     if (row) await finalizeRow(row, generated);
     const rest = rows.filter((r) => r.id !== sample.rowId && r.status === "pending");
     if (rest.length > 0) await processRows(rest, customPrompt);

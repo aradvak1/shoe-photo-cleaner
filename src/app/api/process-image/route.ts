@@ -16,9 +16,25 @@ export async function POST(request: Request) {
   const file = formData.get("image");
   const prompt = formData.get("prompt");
   const customPrompt = typeof prompt === "string" ? prompt.trim() : "";
+  const styleReferenceUrl = formData.get("style_reference_url");
 
   if (!(file instanceof File)) {
     return Response.json({ error: "Missing 'image' file" }, { status: 400 });
+  }
+
+  // The already-approved sample for this batch, sent along so every other
+  // photo can visually match its background/lighting instead of each call
+  // independently reinterpreting the same text prompt (see gemini.ts's
+  // STYLE_REFERENCE_INSTRUCTION for why that caused inconsistent batches).
+  let styleReference: { buffer: Buffer; mimeType: string } | undefined;
+  if (typeof styleReferenceUrl === "string" && styleReferenceUrl) {
+    const refRes = await fetch(styleReferenceUrl).catch(() => null);
+    if (refRes?.ok) {
+      styleReference = {
+        buffer: Buffer.from(await refRes.arrayBuffer()),
+        mimeType: refRes.headers.get("content-type") || "image/png",
+      };
+    }
   }
 
   const originalBuffer = Buffer.from(await file.arrayBuffer());
@@ -40,7 +56,7 @@ export async function POST(request: Request) {
   let originalUploadError: string | null;
   try {
     const [ci, ou] = await Promise.all([
-      editWithBackgroundPrompt(originalBuffer, file.name, mimeType, customPrompt),
+      editWithBackgroundPrompt(originalBuffer, file.name, mimeType, customPrompt, styleReference),
       supabase.storage
         .from("originals")
         .upload(originalPath, originalBuffer, {

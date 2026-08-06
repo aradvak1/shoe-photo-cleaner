@@ -16,9 +16,24 @@ export async function POST(request: Request) {
   const file = formData.get("image");
   const prompt = formData.get("prompt");
   const customPrompt = typeof prompt === "string" ? prompt.trim() : "";
+  const styleReferenceUrl = formData.get("style_reference_url");
 
   if (!(file instanceof File)) {
     return Response.json({ error: "Missing 'image' file" }, { status: 400 });
+  }
+
+  // See process-image/route.ts for why: the already-approved sample for
+  // this batch, sent along so the rest of the batch visually matches its
+  // scene/lighting instead of each call reinterpreting the same text prompt.
+  let styleReference: { buffer: Buffer; mimeType: string } | undefined;
+  if (typeof styleReferenceUrl === "string" && styleReferenceUrl) {
+    const refRes = await fetch(styleReferenceUrl).catch(() => null);
+    if (refRes?.ok) {
+      styleReference = {
+        buffer: Buffer.from(await refRes.arrayBuffer()),
+        mimeType: refRes.headers.get("content-type") || "image/png",
+      };
+    }
   }
 
   const originalBuffer = Buffer.from(await file.arrayBuffer());
@@ -40,6 +55,7 @@ export async function POST(request: Request) {
     const [ci, ou] = await Promise.all([
       generateAtmosphereImage(originalBuffer, file.name, mimeType, {
         prompt: customPrompt || undefined,
+        styleReference,
       }),
       supabase.storage
         .from("originals")
