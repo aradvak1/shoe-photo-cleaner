@@ -205,6 +205,12 @@ export function useImageCreationQueue({
       status: "done",
       imageUrl: generated.imageUrl,
       originalUrl: generated.originalUrl,
+      // A regenerate (see regenerateRows) replaces imageUrl — any earlier
+      // burned design was composited onto the OLD image and no longer
+      // matches, so it must not stay marked designed/ready-to-save. No-op
+      // for a fresh pending->done row, since these are already unset then.
+      designed: false,
+      designedImageUrl: undefined,
     });
   }
 
@@ -226,6 +232,29 @@ export function useImageCreationQueue({
     const row = rows.find((r) => r.id === rowId);
     if (!row) return;
     await processRow(row, customPrompt);
+  }
+
+  /**
+   * Re-runs AI generation for one or more already-"done" rows the seller
+   * flagged as not good enough (e.g. the product's color drifted) — same
+   * source file, same approved style prompt, plus an optional one-off
+   * instruction layered on top just for this regenerate (not saved back
+   * into the shared customPrompt, so it doesn't affect any other photo).
+   * Reuses processRows' concurrency-limited worker pool, so flagging many
+   * rows at once in a large batch doesn't fire them all at the same instant.
+   */
+  async function regenerateRows(rowIds: string[], feedback?: string) {
+    const targets = rowIds
+      .map((id) => rows.find((r) => r.id === id))
+      .filter((r): r is CreationRow => Boolean(r));
+    if (targets.length === 0) return;
+    const trimmed = feedback?.trim();
+    const prompt = trimmed
+      ? customPrompt.trim()
+        ? `${customPrompt.trim()}. ${trimmed}`
+        : trimmed
+      : customPrompt;
+    await processRows(targets, prompt);
   }
 
   /**
@@ -454,6 +483,7 @@ export function useImageCreationQueue({
     approveSample,
     rejectSample,
     retryRow,
+    regenerateRows,
     confirmDesign,
   };
 }

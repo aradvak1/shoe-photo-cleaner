@@ -30,8 +30,17 @@ const OUTPUT_SIZE = 1080;
 // product's own lighting nicely and sometimes left it exactly as
 // photographed, looking flat/unedited — permitting (rather than forbidding)
 // that polish is meant to make the *good* outcome the consistent one.
+//
+// A second seller-reported failure mode (2026-08-06): a black product
+// drifting toward brown/grey/navy. Root cause is almost certainly the
+// lighting/shine permission above — enhancing highlights and reflections
+// on a dark, low-contrast material is exactly the kind of edit a model can
+// mistake for "lighten/warm the base color". The added sentence below
+// narrows that permission back down: shine/highlights may change, the
+// underlying base color/tone never should, black most of all since it has
+// the least margin before a highlight reads as a color shift.
 const PRESERVE_PRODUCT_INSTRUCTION =
-  "The product shown in the attached photo is the exact item being sold — never change its shape, proportions, color, material, texture, or any hardware detail (buckles, studs, stitching, logos); these must stay perfectly recognizable and unchanged from the reference photo. Within that constraint, you should enhance the product's own lighting, highlights, reflections, and material sheen for a polished, professional commercial-photography look — this is expected and encouraged, not just the background. Also change the surrounding background/scene as described below.";
+  "The product shown in the attached photo is the exact item being sold — never change its shape, proportions, color, material, texture, or any hardware detail (buckles, studs, stitching, logos); these must stay perfectly recognizable and unchanged from the reference photo. Within that constraint, you should enhance the product's own lighting, highlights, reflections, and material sheen for a polished, professional commercial-photography look — this is expected and encouraged, not just the background. Critically, this lighting/shine enhancement must never shift the product's actual base color or tone: added highlights and reflections should sit on top of the exact original color, not lighten, warm, or desaturate it — a black product must stay a true, deep black (never drift toward brown, grey, or navy), and every other color must likewise stay the same precise shade as the reference photo. Also change the surrounding background/scene as described below.";
 
 const QUALITY_SUFFIX =
   "Photorealistic, high-end commercial product photography, DSLR quality, shallow depth of field, ultra high detail, no text, no watermark, no logo overlay.";

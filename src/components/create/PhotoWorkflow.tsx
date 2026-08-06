@@ -93,6 +93,7 @@ export function PhotoWorkflow({
     approveSample,
     rejectSample,
     retryRow,
+    regenerateRows,
     confirmDesign,
   } = useImageCreationQueue({ endpoint, mode, autoProcess: false, initialPrompt, onSaved });
 
@@ -102,6 +103,10 @@ export function PhotoWorkflow({
   const [exportError, setExportError] = useState<string | null>(null);
   const [errorRow, setErrorRow] = useState<CreationRow | null>(null);
   const [designRowId, setDesignRowId] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [regenerateFeedback, setRegenerateFeedback] = useState("");
+  const [regenerating, setRegenerating] = useState(false);
 
   const sampleDialogOpen = sample.phase === "generating" || sample.phase === "awaiting-approval";
   const isProcessing = total > 0 && doneCount < total;
@@ -138,6 +143,27 @@ export function PhotoWorkflow({
     } finally {
       setExporting(false);
     }
+  }
+
+  function toggleSelected(rowId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+  }
+
+  // regenerateRows never throws — processRow already catches each row's own
+  // failure and marks it "error" (same as any other AI generation), so a
+  // bad regenerate just shows up as a normal error card, not a crash here.
+  async function handleRegenerateSelected() {
+    setRegenerating(true);
+    await regenerateRows(Array.from(selectedIds), regenerateFeedback);
+    setRegenerating(false);
+    setSelectedIds(new Set());
+    setSelectMode(false);
+    setRegenerateFeedback("");
   }
 
   return (
@@ -192,54 +218,119 @@ export function PhotoWorkflow({
 
       {processedRows.length > 0 && (
         <div>
-          <p className="mb-2 text-sm font-medium text-ink">עיצוב לכל תמונה</p>
-          <p className="mb-3 text-xs text-muted">
-            לחצו על תמונה כדי לבחור או לבנות תבנית, למלא פרטים, ולמקם הכל בדיוק כמו שאתם רוצים.
-          </p>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-            {processedRows.map((row) => (
-              <Card key={row.id}>
-                <CardBody className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => row.status === "done" && setDesignRowId(row.id)}
-                    disabled={row.status !== "done"}
-                    className="block w-full disabled:cursor-not-allowed"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={row.designedImageUrl ?? row.imageUrl ?? row.originalPreviewUrl}
-                      alt={row.file.name}
-                      className="aspect-square w-full rounded-sm border border-border bg-white object-contain"
-                    />
-                  </button>
-                  {row.status === "processing" && <Badge tone="pending">מעבד…</Badge>}
-                  {row.status === "done" && (
-                    <Badge tone={row.designed ? "success" : "pending"}>
-                      {row.designed ? "עוצב ✓" : "מוכן לעיצוב"}
-                    </Badge>
-                  )}
-                  {row.status === "error" && (
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Badge tone="danger" className="cursor-pointer" onClick={() => setErrorRow(row)}>
-                          שגיאה
-                        </Badge>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="px-1.5 py-0.5 text-xs"
-                          onClick={() => retryRow(row.id)}
-                        >
-                          ניסיון חוזר
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </CardBody>
-              </Card>
-            ))}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium text-ink">עיצוב לכל תמונה</p>
+              <p className="text-xs text-muted">
+                {selectMode
+                  ? "סמנו את התמונות שתוצאת ה-AI שלהן לא טובה, ואז אפשר להוסיף הנחיה וללחוץ נסה שוב."
+                  : "לחצו על תמונה כדי לבחור או לבנות תבנית, למלא פרטים, ולמקם הכל בדיוק כמו שאתם רוצים."}
+              </p>
+            </div>
+            <Button
+              variant={selectMode ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => {
+                setSelectMode((v) => !v);
+                setSelectedIds(new Set());
+              }}
+            >
+              {selectMode ? "ביטול סימון" : "לא אהבתי תוצאה — סימון לתיקון"}
+            </Button>
           </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+            {processedRows.map((row) => {
+              const selected = selectedIds.has(row.id);
+              return (
+                <Card key={row.id}>
+                  <CardBody className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (row.status !== "done") return;
+                        if (selectMode) toggleSelected(row.id);
+                        else setDesignRowId(row.id);
+                      }}
+                      disabled={row.status !== "done"}
+                      className={`relative block w-full rounded-sm disabled:cursor-not-allowed ${
+                        selectMode && selected ? "ring-2 ring-accent" : ""
+                      }`}
+                    >
+                      {selectMode && row.status === "done" && (
+                        <span
+                          className={`absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border text-xs ${
+                            selected
+                              ? "border-accent bg-accent text-[#1c1108]"
+                              : "border-border bg-card text-transparent"
+                          }`}
+                        >
+                          ✓
+                        </span>
+                      )}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={row.designedImageUrl ?? row.imageUrl ?? row.originalPreviewUrl}
+                        alt={row.file.name}
+                        className="aspect-square w-full rounded-sm border border-border bg-white object-contain"
+                      />
+                    </button>
+                    {row.status === "processing" && <Badge tone="pending">מעבד…</Badge>}
+                    {row.status === "done" && (
+                      <Badge tone={row.designed ? "success" : "pending"}>
+                        {row.designed ? "עוצב ✓" : "מוכן לעיצוב"}
+                      </Badge>
+                    )}
+                    {row.status === "error" && (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge tone="danger" className="cursor-pointer" onClick={() => setErrorRow(row)}>
+                            שגיאה
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="px-1.5 py-0.5 text-xs"
+                            onClick={() => retryRow(row.id)}
+                          >
+                            ניסיון חוזר
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </CardBody>
+                </Card>
+              );
+            })}
+          </div>
+          {selectMode && selectedIds.size > 0 && (
+            <div className="mt-3 space-y-2 rounded-md border border-border bg-card p-3">
+              <Textarea
+                label={`הנחיה ל-AI עבור ${selectedIds.size} התמונות שנבחרו (לא חובה)`}
+                placeholder='לדוגמה: "השאירו את הנעל בצבע שחור מלא, אל תבהירו או תחממו את הצבע"'
+                value={regenerateFeedback}
+                onChange={(e) => setRegenerateFeedback(e.target.value)}
+                rows={2}
+                disabled={regenerating}
+              />
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={handleRegenerateSelected} disabled={regenerating}>
+                  {regenerating ? "מריץ מחדש…" : `נסה שוב (${selectedIds.size})`}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSelectMode(false);
+                    setSelectedIds(new Set());
+                    setRegenerateFeedback("");
+                  }}
+                  disabled={regenerating}
+                >
+                  ביטול
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
