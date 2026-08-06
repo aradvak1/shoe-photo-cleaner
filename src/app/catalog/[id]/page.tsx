@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody } from "@/components/ui/Card";
 import { CatalogTemplateEditor } from "@/components/catalog/CatalogTemplateEditor";
+import { ExportImagesButton } from "@/components/catalog/ExportImagesButton";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { Photo } from "@/types";
 
@@ -40,6 +41,7 @@ export default async function CatalogDetailPage({
         </div>
         <div className="flex items-center gap-2">
           <CatalogTemplateEditor catalogId={catalog.id} currentTemplateId={catalog.template_id} />
+          <ExportImagesButton photoIds={photos.map((p) => p.id)} />
           {catalog.pdf_url && <Button href={catalog.pdf_url}>הורדת PDF</Button>}
         </div>
       </div>

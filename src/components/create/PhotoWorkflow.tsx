@@ -243,6 +243,13 @@ export function PhotoWorkflow({
         </div>
       )}
 
+      {errorCount > 0 && (
+        <div className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-sm text-danger">
+          {errorCount} תמונות נכשלו ולא ייכללו בשמירה — גללו למעלה ולחצו &quot;ניסיון חוזר&quot; על כל
+          אחת מהן לפני שממשיכים, כדי שלא יהיו לכם חוסרים בקטלוג.
+        </div>
+      )}
+
       {readyCount > 0 && (
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={saveAll} disabled={saving}>
