@@ -125,12 +125,13 @@ async function attemptGeminiGenerate(
 
 // Increasing backoff before each retry of a transient failure — gives a
 // genuine demand spike a real chance to pass rather than hammering the
-// same overloaded endpoint immediately. Three retries (four attempts
-// total) costs at most ~17s of extra wait, well inside this route's
-// generous maxDuration, and turns a routine "high demand" blip into a
-// success instead of a hard failure the seller has to notice and retry
-// by hand.
-const TRANSIENT_RETRY_DELAYS_MS = [2000, 5000, 10000];
+// same overloaded endpoint immediately. Widened from 3 to 5 retries (6
+// attempts total, ~71s of backoff) after a real demand spike on 2026-08-06
+// outlasted the original 3-retry/~17s budget twice in the same session —
+// still well inside this route's 300s maxDuration even with real request
+// time added on top, and turns a longer "high demand" blip into a success
+// instead of a hard failure the seller has to notice and retry by hand.
+const TRANSIENT_RETRY_DELAYS_MS = [3000, 6000, 12000, 20000, 30000];
 
 async function callGeminiGenerate(
   fileBuffer: Buffer,
